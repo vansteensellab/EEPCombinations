@@ -1,0 +1,27 @@
+###############
+# Global params
+
+  # for records
+  description:        'P-E-SuRE ECN data analysis pipeline'
+  dataset:            'ECN runs (pDNA + cDNA), SE sequencing Triple combinations mix test'
+
+  # params
+  metadata:
+    mate_suffix:      '_R1' 
+    input_format:     'fastq.gz'
+
+  dir:
+    fastq_dir:        '/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Raw/'
+    results:          'Results'
+    logs:             'Logs'
+    conda_env:        '/home/m.martinez.ara/mydata/GitLab/epmatrix/epsure_pipeline/SplitV2/envs'
+    snakerules:       '/home/m.martinez.ara/mydata/GitLab/epmatrix/epsure_pipeline/SplitV2/rules'
+
+################
+# Notes:
+############################################ See that the rules were modified to allow for searching a short adapter after the barcode because the Next seq run was noisy and produced a decrease in quality after the barcode.
+# dry run this snakemake pipeline
+#   snakemake -n --snakefile ~/mydata/GitLab/epmatrix/epsure_pipeline/SplitV2/workflows/ecn.wf --configfile ~/mydata/GitLab/epmatrix/epsure_pipeline/SplitV2/config/MMA20230113_TripleCombsSep_ecn.yaml
+
+# run this snakemake pipeline
+#   snakemake --cores 64 --use-conda --snakefile ~/mydata/GitLab/epmatrix/epsure_pipeline/SplitV2/workflows/ecn.wf --configfile ~/mydata/GitLab/epmatrix/epsure_pipeline/SplitV2/config/MMA20230113_TripleCombsSep_ecn.yaml

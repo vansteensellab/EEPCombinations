@@ -1,0 +1,4081 @@
+---
+title: "MMA20230210_EEP_DeepSeq_cDNA_pDNA_processing"
+author: "MMA"
+date: '2023-02-10'
+output: html_document
+---
+
+```{r knitr setup, include=FALSE}
+prefix_lab <- 'EEP_iPCR_ecn_dattero_V2'
+knitr::opts_chunk$set(echo = TRUE,
+                      include = TRUE,
+                      message = FALSE, 
+                      warning = FALSE, 
+                      cache = TRUE, 
+                      cache.path = paste0('cache/', prefix_lab, '/'),
+                      fig.path   = paste0('figures/', prefix_lab, '/'),
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      knitr.table.format = 'markdown')
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+```
+
+---
+
+# Intro
+
+In this document we preprocess sequencing data into 
+
+# Load iPCRs
+
+```{r}
+# custom load iPCR func
+read_ipcr_EEP <- function(fn, delim = '\t') {
+
+  # set column names
+  col_names <- c('barcode', 'frag1', 'strand1', 'frag2', 'strand2', 'ipcr_counts', 'cluster_id')
+
+  # read ipcr data as tibble
+  tib <- readr::read_delim(fn, delim = delim, col_names = col_names)
+
+  # strip DAT library name
+  # pad fragment id with 0's
+  # add unique fragment identifier
+  tib %>%
+    mutate(prefix1 = str_sub(frag1, 1, 1),
+           suffix1 = str_remove(frag1, ".*_"),
+           frag1 = str_remove(frag1, '_.*'),
+           frag1 = str_remove(frag1, '[EP]'),
+           frag1 = str_pad(frag1, width = 3, pad = '0'),
+           frag1 = paste0(suffix1 ,'_',prefix1, frag1),
+           prefix2 = str_sub(frag2, 1, 1),
+           suffix2 = str_remove(frag2, ".*_"),
+           frag2 = str_remove(frag2, '_.*'),
+           frag2 = str_remove(frag2, '[EP]'),
+           frag2 = str_pad(frag2, width = 3, pad = '0'),
+           frag2 = paste0(suffix2 ,'_',prefix2, frag2),
+           id = paste0(frag1, strand1, frag2, strand2))
+}
+
+```
+
+```{r process libs}
+# load EEP libraries
+tib_EEP2_Sox2 <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/Sox2_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_Klf2.merged <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/Klf2.merged_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_Otx2 <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/Otx2_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_FGF5 <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/FGF5_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_Lefty1 <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/Lefty1_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_Nanog <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/Nanog_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_P14 <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/P14_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+tib_EEP2_Tbx3 <- as.tibble(read_ipcr_EEP('/DATA/projects/epmatrix/mouse/TripleCombs/ipcr/Results/Tbx3_EEP_iPCR_unique_barcodes_frag_id_merged.tsv'))
+
+# load spike-in libraries
+
+tib_Spike_in_P1 <- as.tibble(read_ipcr('~/epmatrix/mouse/Split/ipcr/Results/ipcr_E62_2_P-E002_Split_unique_barcodes_frag_id_merged.tsv'))
+tib_Spike_in_P16 <- as.tibble(read_ipcr('~/epmatrix/mouse/Split/ipcr/Results/ipcr_E62_6_P-E006_Split_unique_barcodes_frag_id_merged.tsv'))
+
+```
+
+```{r}
+## correct suffixes Spike ins
+tib_Spike_in_P1<-tib_Spike_in_P1%>% mutate(prefix1="SP1",prefix2="SP1", suffix1="SP1", suffix2="SP1", frag1="SpikeIn1", frag2="SpikeIn1", strand1= "*", strand2= "*", id= paste0(frag1, strand1, frag2, strand2))
+tib_Spike_in_P16<-tib_Spike_in_P16%>% mutate(prefix1="SP16",prefix2="SP16", suffix1="SP16", suffix2="SP16", frag1="SpikeIn16", frag2="SpikeIn16", strand1= "*", strand2= "*", id= paste0(frag1, strand1, frag2, strand2))
+```
+
+
+# iPCR preprocesssing
+## Sox2
+```{r}
+# remove heterotypic
+#tib_EEP2_Sox2 <- remove_heterotypic(tib_EEP2_Sox2)
+
+# fragment representation
+count_fragments(tib_EEP2_Sox2)
+count_elements(tib_EEP2_Sox2)
+count_bc_reads(tib_EEP2_Sox2)
+```
+
+## Klf2.merged
+```{r}
+# remove heterotypic
+#tib_EEP2_Klf2.merged <- remove_heterotypic(tib_EEP2_Klf2.merged)
+
+# fragment representation
+count_fragments(tib_EEP2_Klf2.merged)
+count_elements(tib_EEP2_Klf2.merged)
+count_bc_reads(tib_EEP2_Klf2.merged)
+```
+
+## Otx2
+```{r}
+# remove heterotypic
+#tib_EEP2_Otx2 <- remove_heterotypic(tib_EEP2_Otx2)
+
+# fragment representation
+count_fragments(tib_EEP2_Otx2)
+count_elements(tib_EEP2_Otx2)
+count_bc_reads(tib_EEP2_Otx2)
+```
+
+## FGF5
+```{r}
+# remove heterotypic
+#tib_EEP2_FGF5 <- remove_heterotypic(tib_EEP2_FGF5)
+
+# fragment representation
+count_fragments(tib_EEP2_FGF5)
+count_elements(tib_EEP2_FGF5)
+count_bc_reads(tib_EEP2_FGF5)
+```
+
+## Lefty1
+```{r}
+# remove heterotypic
+#tib_EEP2_Lefty1 <- remove_heterotypic(tib_EEP2_Lefty1)
+
+# fragment representation
+count_fragments(tib_EEP2_Lefty1)
+count_elements(tib_EEP2_Lefty1)
+count_bc_reads(tib_EEP2_Lefty1)
+```
+
+## Nanog
+```{r}
+# remove heterotypic
+#tib_EEP2_Nanog <- remove_heterotypic(tib_EEP2_Nanog)
+
+# fragment representation
+count_fragments(tib_EEP2_Nanog)
+count_elements(tib_EEP2_Nanog)
+count_bc_reads(tib_EEP2_Nanog)
+```
+
+## Ap1m1(P14)
+```{r}
+# remove heterotypic
+#tib_EEP2_P14 <- remove_heterotypic(tib_EEP2_P14)
+
+# fragment representation
+count_fragments(tib_EEP2_P14)
+count_elements(tib_EEP2_P14)
+count_bc_reads(tib_EEP2_P14)
+```
+
+## Tbx3
+```{r}
+# remove heterotypic
+#tib_EEP2_Tbx3 <- remove_heterotypic(tib_EEP2_Tbx3)
+
+# fragment representation
+count_fragments(tib_EEP2_Tbx3)
+count_elements(tib_EEP2_Tbx3)
+count_bc_reads(tib_EEP2_Tbx3)
+```
+
+
+```{r}
+#Total number of combinations tested
+tib_EEP2_Sox2%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_Klf2.merged%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_Otx2%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_FGF5%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_Lefty1%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_Nanog%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_P14%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+tib_EEP2_Tbx3%>%
+  group_by(id)%>%
+  summarise()%>%
+  nrow()
+
+17200+21033+20253+16728+21028+21876+20418-8
+
+```
+
+### Combine Split libraries
+ 
+
+In order to make comparisons easier between the Datasets we process each library separatedly (with the spike-in), then we will normalize to the spike-in librares and merge all the libraries into one dataset. We keep the the same structure as the previous EP libraries. for this purpose, we will keep the terminology fragment 1 and fragment 2 but change its meaning. Being in this case fragment 1 the firs cCRE and fragment 2 the second cCRE in the enhancer positon. Then we add a column which indicates the promoter of each library. In this process we also correct "eempty" fragments to "empty", and prefix "e" for noF
+
+#### Split libs 
+
+```{r}
+#Sox2
+tib_EEP2_Sox2_renamed <- tib_EEP2_Sox2  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P1_SOX2") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Sox2")
+
+#Klf2
+tib_EEP2_Klf2.merged_renamed <- tib_EEP2_Klf2.merged  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P2_KLF2") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Klf2")
+
+#Otx2
+tib_EEP2_Otx2_renamed <- tib_EEP2_Otx2  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P3_OTX2") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Otx2")
+
+#FGF5
+tib_EEP2_FGF5_renamed <- tib_EEP2_FGF5  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P4_FGF5") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="FGF5")
+
+#Lefty1
+tib_EEP2_Lefty1_renamed <- tib_EEP2_Lefty1  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P5_Lefty1") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Lefty1")
+
+#Nanog
+tib_EEP2_Nanog_renamed <- tib_EEP2_Nanog  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P6_Nanog") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Nanog")
+
+#P14
+tib_EEP2_P14_renamed <- tib_EEP2_P14  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P7_Ap1m1") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Ap1m1")
+
+#Tbx3
+tib_EEP2_Tbx3_renamed <- tib_EEP2_Tbx3  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="P8_Tbx3") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Tbx3")
+
+# Spike-in P1
+tib_Spike_in_P1_renamed <- tib_Spike_in_P1  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="SP_Zfp822") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Spike_in_P1")
+
+# Spike-in P16_Klf2
+tib_Spike_in_P16_renamed <- tib_Spike_in_P16  %>% mutate(frag1 = ifelse(frag1=="eempty", "empty", frag1)) %>% mutate(prefix1 = ifelse(prefix1=="e", "NoF", prefix1)) %>% mutate(Promoter="SP_Klf2") %>% mutate(id =paste0(frag1, strand1, frag2, strand2, Promoter)) %>% mutate(id1 =paste0(frag1, strand1), id2 =paste0(frag2, strand2)) %>% mutate(library="Spike_in_P16")
+
+```
+
+#### Combine libs with Spike-in libs
+
+```{r}
+#Combine Sox2
+tib_Split_EEP_Sox2_Combined <- bind_rows(tib_EEP2_Sox2_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine Klf2
+tib_Split_EEP_Klf2_Combined <- bind_rows(tib_EEP2_Klf2.merged_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine Otx2
+tib_Split_EEP_Otx2_Combined <- bind_rows(tib_EEP2_Otx2_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine FGF5
+tib_Split_EEP_FGF5_Combined <- bind_rows(tib_EEP2_FGF5_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine Lefty1
+tib_Split_EEP_Lefty1_Combined <- bind_rows(tib_EEP2_Lefty1_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine Nanog
+tib_Split_EEP_Nanog_Combined <- bind_rows(tib_EEP2_Nanog_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine P14
+tib_Split_EEP_P14_Combined <- bind_rows(tib_EEP2_P14_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+#Combine Tbx3
+tib_Split_EEP_Tbx3_Combined <- bind_rows(tib_EEP2_Tbx3_renamed, tib_Spike_in_P1_renamed, tib_Spike_in_P16_renamed)
+
+#Filter Barcode Clashing, old, distinct does not work as I thought
+#tib_Split_NCS_Combined_Unique_V2 <- distinct(tib_Split_NCS_Combined_V2, barcode, .keep_all = TRUE) %>% filter(frag1!="uunknown")
+
+## This is the new key step in removing barcode clashing within and across libraries
+# circumvent distinct function, this manual version removes all non unique rows
+#tib_Split_EEP_Combined_Unique<-tib_Split_EEP_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+#  filter(n==1)%>%
+#  unnest()%>% 
+#  select(-n)%>% 
+#  filter(frag1!="uunknown")
+
+
+#tib_Split_NCS_Combined_Unique_PlusUnknw_V2 <- distinct(tib_Split_NCS_Combined_V2, barcode, .keep_all = TRUE)
+
+#Combine Sox2
+tib_Split_EEP_Sox2_Combined_Unique_PlusUnknw <-tib_Split_EEP_Sox2_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine Klf2
+tib_Split_EEP_Klf2_Combined_Unique_PlusUnknw <-tib_Split_EEP_Klf2_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine Otx2
+tib_Split_EEP_Otx2_Combined_Unique_PlusUnknw <-tib_Split_EEP_Otx2_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine FGF5
+tib_Split_EEP_FGF5_Combined_Unique_PlusUnknw <-tib_Split_EEP_FGF5_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine Lefty1
+tib_Split_EEP_Lefty1_Combined_Unique_PlusUnknw <-tib_Split_EEP_Lefty1_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine Nanog
+tib_Split_EEP_Nanog_Combined_Unique_PlusUnknw <-tib_Split_EEP_Nanog_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine P14
+tib_Split_EEP_P14_Combined_Unique_PlusUnknw <-tib_Split_EEP_P14_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+
+#Combine Tbx3
+tib_Split_EEP_Tbx3_Combined_Unique_PlusUnknw <-tib_Split_EEP_Tbx3_Combined %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+  filter(n==1)%>%
+  unnest()%>% 
+  select(-n)
+```
+# clean environment
+
+```{r}
+remove(tib_EEP2_Sox2_renamed, tib_EEP2_Sox2, tib_EEP2_Klf2.merged_renamed, tib_EEP2_Klf2.merged, tib_EEP2_Otx2_renamed, tib_EEP2_Otx2,tib_EEP2_FGF5_renamed, tib_EEP2_FGF5, tib_EEP2_Lefty1_renamed,tib_EEP2_Lefty1,tib_EEP2_Nanog_renamed,tib_EEP2_Nanog,tib_EEP2_P14_renamed,tib_EEP2_P14,tib_EEP2_Tbx3_renamed,tib_EEP2_Tbx3, tib_Spike_in_P1_renamed, tib_Spike_in_P1, tib_Spike_in_P16_renamed, tib_Spike_in_P16 )
+```
+
+# check pDNA iPCR overlap
+
+```{r}
+#Combine Sox2 double check
+#tib_Split_EEP_Sox2_Combined_Unique <-tib_EEP2_Sox2 %>%nest(-barcode ) %>% mutate(n = map_dbl(data, nrow))%>%
+#  filter(n==1)%>%
+#  unnest()%>% 
+#  select(-n)
+```
+
+
+```{r}
+#tib_cn_br1_Sox2%>%
+#  summarise(n(), sum(pdna_counts_br1))
+
+#inner_join(tib_EEP2_Sox2,tib_cn_br1_Sox2, by="barcode")%>%
+#  summarise(n(), sum(pdna_counts_br1))
+
+#inner_join(tib_Split_EEP_Sox2_Combined_Unique,tib_cn_br1_Sox2, by="barcode")%>%
+#  summarise(n(), sum(pdna_counts_br1))
+
+#inner_join(tib_Split_EEP_Sox2_Combined_Unique_PlusUnknw,tib_cn_br1_Sox2, by="barcode")%>%
+#  summarise(n(), sum(pdna_counts_br1))
+```
+
+
+# ecn data merging
+## Combining expression and copy number data
+
+### Sox2
+
+```{r merge ipcr and ecn data Sox2}
+# read expression data (cdna)
+tib_expr_br1_Sox2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Sox2_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_Sox2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Sox2_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_Sox2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Sox2_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_Sox2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Sox2_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets Sox2
+tib_Split_EEP_Sox2_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_Sox2_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_Sox2),
+                                   expr_tib_list = list(tib_expr_br1_Sox2,tib_expr_br2_Sox2,tib_expr_br3_Sox2))
+
+
+```
+
+### Klf2
+
+```{r merge ipcr and ecn data Klf2}
+# read expression data (cdna)
+tib_expr_br1_Klf2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Klf2_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_Klf2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Klf2_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_Klf2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Klf2_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_Klf2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Klf2_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets Klf2
+tib_Split_EEP_Klf2_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_Klf2_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_Klf2),
+                                   expr_tib_list = list(tib_expr_br1_Klf2,tib_expr_br2_Klf2,tib_expr_br3_Klf2))
+
+
+
+```
+
+### Otx2
+
+```{r merge ipcr and ecn data Otx2}
+# read expression data (cdna)
+tib_expr_br1_Otx2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Otx2_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_Otx2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Otx2_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_Otx2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Otx2_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_Otx2 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Otx2_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets Klf2
+tib_Split_EEP_Otx2_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_Otx2_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_Otx2),
+                                   expr_tib_list = list(tib_expr_br1_Otx2,tib_expr_br2_Otx2,tib_expr_br3_Otx2))
+
+
+
+```
+
+### FGF5
+
+```{r merge ipcr and ecn data FGF5}
+# read expression data (cdna)
+tib_expr_br1_FGF5 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_FGF5_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_FGF5 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_FGF5_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_FGF5 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_FGF5_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_FGF5 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_FGF5_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets FGF5
+tib_Split_EEP_FGF5_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_FGF5_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_FGF5),
+                                   expr_tib_list = list(tib_expr_br1_FGF5,tib_expr_br2_FGF5,tib_expr_br3_FGF5))
+
+
+
+```
+
+### Lefty1
+
+```{r merge ipcr and ecn data Lefty1}
+# read expression data (cdna)
+tib_expr_br1_Lefty1 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Lefty1_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_Lefty1 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Lefty1_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_Lefty1 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Lefty1_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_Lefty1 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Lefty1_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets FGF5
+tib_Split_EEP_Lefty1_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_Lefty1_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_Lefty1),
+                                   expr_tib_list = list(tib_expr_br1_Lefty1,tib_expr_br2_Lefty1,tib_expr_br3_Lefty1))
+
+
+
+```
+
+### Nanog
+
+```{r merge ipcr and ecn data Nanog}
+# read expression data (cdna)
+tib_expr_br1_Nanog <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Nanog_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_Nanog <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Nanog_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_Nanog <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Nanog_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_Nanog <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Nanog_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets Nanog
+tib_Split_EEP_Nanog_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_Nanog_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_Nanog),
+                                   expr_tib_list = list(tib_expr_br1_Nanog,tib_expr_br2_Nanog,tib_expr_br3_Nanog))
+
+
+
+```
+
+### P14
+
+```{r merge ipcr and ecn data P14}
+# read expression data (cdna)
+tib_expr_br1_P14 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_P14_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_P14 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_P14_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_P14 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_P14_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_P14 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_P14_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets Nanog
+tib_Split_EEP_P14_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_P14_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_P14),
+                                   expr_tib_list = list(tib_expr_br1_P14,tib_expr_br2_P14,tib_expr_br3_P14))
+
+
+
+```
+
+### Tbx3
+
+```{r merge ipcr and ecn data Tbx3}
+# read expression data (cdna)
+tib_expr_br1_Tbx3 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Tbx3_cDNA_merged_BR1_barcode_counts.tsv', col_lab = 'cdna_counts_br1')
+tib_expr_br2_Tbx3 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Tbx3_cDNA_merged_BR2_barcode_counts.tsv', col_lab = 'cdna_counts_br2')
+tib_expr_br3_Tbx3 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Tbx3_cDNA_merged_BR3_barcode_counts.tsv', col_lab = 'cdna_counts_br3')
+# read copy number data (pdna)
+tib_cn_br1_Tbx3 <- read_ecn('/DATA/projects/epmatrix/mouse/TripleCombs/ecn/Results/EEP_Tbx3_pDNA_merged_barcode_counts.tsv', col_lab = 'pdna_counts_br1')
+
+# merge datasets Tbx3
+tib_Split_EEP_Tbx3_merged <- merge_ipcr_ecn(tib           = tib_Split_EEP_Tbx3_Combined_Unique_PlusUnknw, 
+                                   cn_tib_list   = list(tib_cn_br1_Tbx3),
+                                   expr_tib_list = list(tib_expr_br1_Tbx3,tib_expr_br2_Tbx3,tib_expr_br3_Tbx3))
+
+
+
+```
+
+
+
+### Barcodes lost
+
+```{r}
+get_barcode_summary_Split <- function(tib_Split, tib_merged) {
+
+  n_Split    <- nrow(tib_Split)
+  n_Split_mg <- nrow(tib_merged)
+
+  loss_Split <- (n_Split - n_Split_mg) / n_Split * 100
+
+  df <- data.frame(n_Split,
+                   n_Split_mg,
+                   signif(loss_Split, 3))
+
+  df %>%
+    kable(caption = 'Summary of total barcode counts',
+          col.names = c('Split (iPCR)', 'Split (pDNA > 0)', 'Split loss (%)'))
+}
+
+
+get_barcode_summary_Split(tib_Split_EEP_Sox2_Combined_Unique_PlusUnknw, tib_Split_EEP_Sox2_merged)
+get_barcode_summary_Split(tib_Split_EEP_Klf2_Combined_Unique_PlusUnknw, tib_Split_EEP_Klf2_merged)
+get_barcode_summary_Split(tib_Split_EEP_Otx2_Combined_Unique_PlusUnknw, tib_Split_EEP_Otx2_merged)
+get_barcode_summary_Split(tib_Split_EEP_FGF5_Combined_Unique_PlusUnknw, tib_Split_EEP_FGF5_merged)
+get_barcode_summary_Split(tib_Split_EEP_Lefty1_Combined_Unique_PlusUnknw, tib_Split_EEP_Lefty1_merged)
+get_barcode_summary_Split(tib_Split_EEP_Nanog_Combined_Unique_PlusUnknw, tib_Split_EEP_Nanog_merged)
+get_barcode_summary_Split(tib_Split_EEP_P14_Combined_Unique_PlusUnknw, tib_Split_EEP_P14_merged)
+get_barcode_summary_Split(tib_Split_EEP_Tbx3_Combined_Unique_PlusUnknw, tib_Split_EEP_Tbx3_merged)
+```
+
+
+
+```{r}
+remove(tib_Split_EEP_Sox2_Combined_Unique_PlusUnknw, tib_Split_EEP_Sox2_Combined)
+remove(tib_Split_EEP_Klf2_Combined_Unique_PlusUnknw, tib_Split_EEP_Klf2_Combined)
+remove(tib_Split_EEP_Otx2_Combined_Unique_PlusUnknw, tib_Split_EEP_Otx2_Combined)
+remove(tib_Split_EEP_FGF5_Combined_Unique_PlusUnknw, tib_Split_EEP_FGF5_Combined)
+remove(tib_Split_EEP_Lefty1_Combined_Unique_PlusUnknw, tib_Split_EEP_Lefty1_Combined)
+remove(tib_Split_EEP_Nanog_Combined_Unique_PlusUnknw, tib_Split_EEP_Nanog_Combined)
+remove(tib_Split_EEP_P14_Combined_Unique_PlusUnknw, tib_Split_EEP_P14_Combined)
+remove(tib_Split_EEP_Tbx3_Combined_Unique_PlusUnknw, tib_Split_EEP_Tbx3_Combined)
+```
+
+# Save dataset
+
+```{r save tibbles, eval = TRUE}
+save(list = c('tib_Split_EEP_Sox2_merged','tib_Split_EEP_Klf2_merged','tib_Split_EEP_Otx2_merged','tib_Split_EEP_FGF5_merged','tib_Split_EEP_Lefty1_merged','tib_Split_EEP_Nanog_merged','tib_Split_EEP_P14_merged','tib_Split_EEP_Tbx3_merged'),
+     file = '~/mydata/GitLab/epmatrix/data/MMA20230210_EEP_E143_DeepSeq_processed.RData')
+```
+
+```{r}
+remove(tib_cn_br1_Sox2,tib_expr_br1_Sox2, tib_expr_br2_Sox2,tib_expr_br3_Sox2)
+remove(tib_cn_br1_Klf2,tib_expr_br1_Klf2, tib_expr_br2_Klf2,tib_expr_br3_Klf2)
+remove(tib_cn_br1_Otx2,tib_expr_br1_Otx2, tib_expr_br2_Otx2,tib_expr_br3_Otx2)
+remove(tib_cn_br1_FGF5,tib_expr_br1_FGF5, tib_expr_br2_FGF5,tib_expr_br3_FGF5)
+remove(tib_cn_br1_Lefty1,tib_expr_br1_Lefty1, tib_expr_br2_Lefty1,tib_expr_br3_Lefty1)
+remove(tib_cn_br1_Nanog,tib_expr_br1_Nanog, tib_expr_br2_Nanog,tib_expr_br3_Nanog)
+remove(tib_cn_br1_P14,tib_expr_br1_P14, tib_expr_br2_P14,tib_expr_br3_P14)
+remove(tib_cn_br1_Tbx3,tib_expr_br1_Tbx3, tib_expr_br2_Tbx3,tib_expr_br3_Tbx3)
+```
+
+
+# load dataset
+
+```{r load tibbles, eval = TRUE}
+load(file = '~/mydata/GitLab/epmatrix/data/MMA20230210_EEP_E143_DeepSeq_processed.RData')
+```
+
+# Explore pDNA cDNA distributions
+
+```{r}
+tib_Split_EEP_Sox2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Klf2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Otx2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_FGF5_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Lefty1_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Nanog_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Tbx3_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(log10(pdna_counts_br1)))+
+  geom_histogram()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Sox2_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+tib_Split_EEP_Klf2_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+tib_Split_EEP_Otx2_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+tib_Split_EEP_FGF5_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+tib_Split_EEP_Lefty1_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+tib_Split_EEP_Nanog_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+tib_Split_EEP_P14_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+tib_Split_EEP_Tbx3_merged %>%
+  mutate(pdna5=ifelse(pdna_counts_br1>8, 1, 0))%>%
+  summarise(n=n(), p5=sum(pdna5))%>%
+    mutate(percentage8pDNAcounts=100*p5/n)
+
+```
+
+
+## log10
+```{r, fig.width = 10, fig.height = 9}
+tib_Split_EEP_Sox2_merged%>%
+  summarise(n(), sum(pdna_counts_br1))
+tib_Split_EEP_Sox2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  group_by(Promoter) %>%
+  summarise(pDNAcounts = sum(pdna_counts_br1))%>%
+  ggplot(aes(Promoter, log10(pDNAcounts), fill=Promoter))+
+  geom_bar(stat = "identity")+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Sox2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  group_by(Promoter) %>%
+  summarise(cDNAcounts = sum(cdna_counts_br1))%>%
+  ggplot(aes(Promoter, log10(cDNAcounts), fill=Promoter))+
+  geom_bar(stat = "identity")+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of cDNA counts library")
+
+```
+
+## Raw
+
+```{r, fig.width = 10, fig.height = 9}
+tib_Split_EEP_Sox2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  group_by(Promoter) %>%
+  summarise(pDNAcounts = sum(pdna_counts_br1))%>%
+  ggplot(aes(Promoter, (pDNAcounts), fill=Promoter))+
+  geom_bar(stat = "identity")+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of pDNA counts library")
+
+tib_Split_EEP_Sox2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  group_by(Promoter) %>%
+  summarise(cDNAcounts = sum(cdna_counts_br1))%>%
+  ggplot(aes(Promoter, (cDNAcounts), fill=Promoter))+
+  geom_bar(stat = "identity")+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design Nr of cDNA counts library")
+
+```
+
+
+
+
+## Activity
+
+```{r, fig.width = 10, fig.height = 9}
+
+tib_Split_EEP_Sox2_merged %>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  group_by(Promoter) %>%
+  summarise(pDNAcounts = sum(pdna_counts_br1), cDNAcounts1 = sum(cdna_counts_br1), cDNAcounts2 = sum(cdna_counts_br2), cDNAcounts3 = sum(cdna_counts_br3))%>%
+  ggplot(aes(Promoter, log2(((cDNAcounts1+cDNAcounts2+cDNAcounts3)/3)/pDNAcounts), fill=Promoter))+
+  geom_bar(stat = "identity")+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+
+```
+
+
+
+# Check activity distributions
+
+```{r, fig.width = 10, fig.height = 9}
+
+tib_Split_EEP_Sox2_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Klf2_merged %>%
+   mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_Otx2_merged %>%
+   mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_FGF5_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_Lefty1_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_Nanog_merged %>%
+   mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_P14_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_Tbx3_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                         ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+  mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                         ifelse(grepl('Random',suffix2) ,"Controls",suffix2)))%>%
+  mutate(ControlsGroup= ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", "Rest"))%>%
+  group_by(id, Promoter, ControlsGroup)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=ControlsGroup))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+
+
+
+```
+
+```{r, fig.width = 10, fig.height = 9}
+
+tib_Split_EEP_Sox2_merged %>%
+  mutate(clusterSox2= ifelse(suffix1=="Sox2" & suffix2=="Sox2", "Sox2Clust", "Rest"))%>%
+  group_by(id, Promoter, clusterSox2)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=clusterSox2))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+
+```
+
+
+```{r, fig.width = 10, fig.height = 9}
+
+tib_Split_EEP_Sox2_merged %>%
+  mutate(clusterSox2= ifelse(suffix1=="Klf2" & suffix2=="Klf2", "Klf2Clust", "Rest"))%>%
+  group_by(id, Promoter, clusterSox2)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(Promoter, log2(Activity), fill=clusterSox2))+
+  geom_boxplot()+
+  #facet_wrap(~Set)+
+  labs(title = "Split Design activity library")
+
+
+
+```
+
+
+
+
+
+## check cluster effect
+
+```{r, fig.width = 10, fig.height = 10}
+
+tib_Split_EEP_Sox2_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Klf2_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Otx2_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+
+tib_Split_EEP_FGF5_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Lefty1_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Nanog_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_P14_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Tbx3_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+```
+
+
+```{r, fig.width = 10, fig.height = 10}
+
+tib_Split_EEP_Sox2_merged %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5"), "Controls", cluster))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  group_by(id, Promoter, cluster)%>%
+  summarise(pdna= sum(pdna_counts_br1), cdna = sum(cdna_counts_br1), nrBC=n())%>%
+mutate(Activity= cdna/pdna)%>%
+  filter(nrBC>4)%>%
+   filter(cluster%in%c("Controls","Sox2", "Klf2", "Nanog", "Lefty1"))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(Activity), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+```
+# Calculate activities
+```{r}
+# min number of barcodes
+min_n_bc <- 5
+# min copy number
+min_pdna <- 8
+
+```
+
+
+```{r Process function}
+#adapted function from auto_process function in dattero, does not compute cooperativity, just activities based on averaging method.
+auto_process_Split <- function(tib_Split, min_pdna, min_n_bc, avg_type, signal_t) {
+
+  # sum pdna counts across replicates
+  tib_Split    <- combine_cnSplit(tib_Split)
+
+  # remove barcodes with pDNA reads < threshold
+  tib_Split    <- filter_cn(tib_Split, min_pdna = min_pdna)
+
+  # remove barcodes of elements with < threshold distinct barcodes
+  tib_Split    <- filter_barcodes(tib_Split, min_n_bc = min_n_bc,  main = 'Basal')
+
+  # compute offsets
+  offsets_Split <- tib_Split %>%
+    dplyr::select(contains('dna_counts')) %>%
+    colSums() / 1e6
+  names(offsets_Split) <- names(offsets_Split) %>%
+    str_replace('_counts', '')
+
+  message('Split sum', offsets_Split)
+
+  # normalize to library sizes
+  tib_Split    <- normalize_counts(tib_Split, offsets_Split)
+
+  # compute activities and summarize barcodes
+  tib_Split    <- compute_activities(tib_Split)
+
+  # summarize activities (weighted average)
+  tib_Split    <- summarize_barcodesNCS(tib_Split, type = avg_type)
+
+  #if(missing(signal_t)) {
+
+    # model combinatorial activity distributions
+    #signal_t     <- learn_min_activity(tib_comb)
+
+  #}
+
+  # compute cooperativity
+  
+  
+  #tib_comb_all <- compute_cooperativity(tib_comb, tib_basal, remove_inactive = FALSE)
+
+  # add metadata
+  #tib_basal    <- add_metadata(tib_basal, tib_dat = tib_dat, type = 'basal')
+  tib_Split     <- add_metadataSplit(tib_Split, tib_dat = tib_dat, type = 'comb')
+  #tib_comb_all <- add_metadata(tib_comb_all, tib_dat = tib_dat, type = 'comb')
+
+  # return list of tibs
+  #return(list('basal'    = tib_basal,
+  #            'comb'     = tib_comb,
+  #            'comb_all' = tib_comb_all,
+  #            'signal_t' = signal_t))
+return(tib_Split)
+}
+
+combine_cnSplit <- function(tib) {
+
+  # detect number of replicates based on colnames (diagnostic)
+  n_repl <- dplyr::select(tib, starts_with('pdna_counts_')) %>%
+    ncol
+
+  message('Detected ', n_repl, ' replicates')
+
+  # summarize pDNA counts across replicates
+  tib %>%
+    mutate(pdna_counts = rowSums(dplyr::select(., starts_with('pdna_counts_')))) %>%
+    dplyr::select(-starts_with('pdna_counts_')) %>%
+    dplyr::select(barcode:id, pdna_counts, starts_with('cdna_counts_'),library,Promoter,prefix1, prefix2, suffix1, suffix2)
+
+}
+add_metadataSplit <- function(tib, tib_dat, type = 'basal') {
+
+  # validate args
+  stopifnot(type %in% c('basal', 'comb'))
+  if(type == 'basal') {
+  }
+  else {
+    tib <- tib %>%
+      mutate(id1   = paste0(frag1, strand1),
+             id2   = paste0(frag2, strand2),
+             id    = paste0(id1, id2),
+             class = paste0(prefix1, prefix2)) %>%
+      # add genomic coordinates
+      #left_join(tib_dat, by = c('frag1' = 'frag')) %>%
+      #dplyr::rename(seqnames1 = seqnames, start1 = start, end1 = end) %>%
+      #left_join(tib_dat, by = c('frag2' = 'frag')) %>%
+      #dplyr::rename(seqnames2 = seqnames, start2 = start, end2 = end) %>%
+      # group, trick essentially rowwise()
+      group_by(id1, id2,) %>%
+      # distances for trans pairs is set to Inf
+      #mutate(dist = ifelse(seqnames1 == seqnames2,
+      #                     min(abs(end1 - start2), abs(end2 - start1)), Inf)) %>%
+      # reorder to final shape
+      dplyr::select(id, class, Promoter,
+                    id1, frag1, strand1, prefix1, suffix1,
+                    id2, frag2, strand2, prefix2, suffix2,
+                    starts_with('activ'), starts_with('boost'),library) %>%
+      ungroup
+        }
+
+  tib
+}
+
+summarize_barcodesNCS <- function(tib, type = 'wa') {
+
+  # stop if type not 'wa'/'avg'
+  if(!type %in% c('wa', 'avg'))
+    stop('type should be equal to wa for a weighted average, or to avg for an arithmetic average')
+
+  # aux function that works on a nested tibble ($data slot)
+  get_summarized_vals <- function(dat, type) {
+
+    # extract pDNA counts
+    pdna_counts <- dat[['pdna_counts']]
+    denom       <- sum(pdna_counts)
+
+    # extract activity values
+    dat <- dat %>%
+      dplyr::select(starts_with('activity_'))
+
+    if(type == 'wa') {
+
+      # summarize barcode activities using a weighted average (w = pdna counts)
+      vec_summarized <- colSums(dat * pdna_counts) / denom
+
+    }
+
+    else {
+
+      # summarize barcode activities using an arithmetic average
+      vec_summarized <- colMeans(dat)
+
+    }
+
+    # take geom mean of activities
+    vec_summarized[['activity_all']] <- prod(vec_summarized) ^ (1 / length(vec_summarized))
+
+    return(vec_summarized)
+  }
+
+  # nest input tibble by element identity
+  tib_nested <- tib %>%
+    group_by(id, frag1, strand1, frag2, strand2, library, Promoter, prefix1, prefix2, suffix1, suffix2) %>%
+    nest()
+
+  tib_summarized <- purrr::map(tib_nested$data, get_summarized_vals, type = type) %>%
+    do.call(what = 'rbind') %>%
+    as_data_frame()
+
+  tib_nested %>%
+    # drop data slot = unnest
+    dplyr::select(-data) %>%
+    bind_cols(tib_summarized)
+}
+
+```
+
+```{r}
+
+
+#compute activities 
+tib_Split_EEP_Sox2_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_Sox2_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_Klf2_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_Klf2_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_Otx2_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_Otx2_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_FGF5_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_FGF5_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_Lefty1_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_Lefty1_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_Nanog_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_Nanog_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_P14_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_P14_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+tib_Split_EEP_Tbx3_Activities         <- auto_process_Split(tib_Split = tib_Split_EEP_Tbx3_merged,
+                                              min_pdna  = min_pdna, 
+                                              min_n_bc  = min_n_bc, 
+                                              avg_type  = 'avg')
+
+
+
+```
+
+```{r}
+tib_Split_EEP_Sox2_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_Klf2_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_Otx2_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_FGF5_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_Lefty1_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_Nanog_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_P14_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+
+tib_Split_EEP_Tbx3_Activities%>%
+  filter(Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>% select(Promoter, activity_all)
+```
+
+```{r, fig.width = 10, fig.height = 10}
+
+tib_Split_EEP_Sox2_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Klf2_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Otx2_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_FGF5_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Lefty1_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Nanog_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_P14_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Tbx3_Activities %>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+```
+
+```{r, fig.width = 10, fig.height = 10}
+
+tib_Split_EEP_Sox2_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Klf2_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Otx2_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_FGF5_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Lefty1_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Nanog_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_P14_Activities %>%
+      filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+tib_Split_EEP_Tbx3_Activities %>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"SP1",
+"SP16"), "Controls", cluster))%>%
+  #mutate(Set=ifelse(str_sub(library,1,1)=="N", "NCS", "Split"))%>%
+  #filter(prefix1=="NoF") %>%
+  ggplot(aes(cluster, log2(activity_all), fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Split Design activity library")
+
+```
+
+# Calculate boost index
+
+
+
+```{r}
+# Calc baseline per promoter
+
+# Sox2
+NormEEP_Sox2<-tib_Split_EEP_Sox2_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_Sox2_Boost <- tib_Split_EEP_Sox2_Activities %>% left_join(NormEEP_Sox2, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# Klf2
+NormEEP_Klf2<-tib_Split_EEP_Klf2_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_Klf2_Boost <- tib_Split_EEP_Klf2_Activities %>% left_join(NormEEP_Klf2, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# Otx2
+NormEEP_Otx2<-tib_Split_EEP_Otx2_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_Otx2_Boost <- tib_Split_EEP_Otx2_Activities %>% left_join(NormEEP_Otx2, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# FGF5
+NormEEP_FGF5<-tib_Split_EEP_FGF5_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_FGF5_Boost <- tib_Split_EEP_FGF5_Activities %>% left_join(NormEEP_FGF5, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# Lefty1
+NormEEP_Lefty1<-tib_Split_EEP_Lefty1_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_Lefty1_Boost <- tib_Split_EEP_Lefty1_Activities %>% left_join(NormEEP_Lefty1, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# Nanog
+NormEEP_Nanog<-tib_Split_EEP_Nanog_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_Nanog_Boost <- tib_Split_EEP_Nanog_Activities %>% left_join(NormEEP_Nanog, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# P14
+NormEEP_P14<-tib_Split_EEP_P14_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_P14_Boost <- tib_Split_EEP_P14_Activities %>% left_join(NormEEP_P14, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+# Tbx3
+NormEEP_Tbx3<-tib_Split_EEP_Tbx3_Activities %>%
+      mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+    #filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="Controls")%>%
+  group_by(Promoter)%>%
+  summarise(Baseline=median(activity_all), StDevBaseline= sd(activity_all))
+
+tib_Split_EEP_Tbx3_Boost <- tib_Split_EEP_Tbx3_Activities %>% left_join(NormEEP_Tbx3, by = "Promoter") %>%
+  mutate(boost=log2(activity_all/Baseline))
+
+```
+
+
+```{r, fig.width = 10, fig.height = 10}
+
+tib_Split_EEP_Sox2_Boost %>%
+  filter(Promoter=="P1_SOX2")%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,"Rest"))%>%
+  ggplot(aes(cluster, boost, fill=cluster))+
+  geom_boxplot()+
+  facet_wrap(~Promoter)+
+  labs(title = "Sox2 EEP Boost")
+```
+
+
+
+## matrices
+
+```{r ploot matrix function, include=FALSE}
+
+#Function to plot the Boosting index Matrix 
+plot_coop_heatmap_EEP <- function(tib, classs = 'all' , skip_n_lab = 1){
+
+  if(classs != 'all') {
+    # note: tib %>% filter(class == get('class')) fails
+    # see https://stackoverflow.com/questions/40169949/filter-dataframe-using-global-variable-with-the-same-name-as-column-name
+
+    tib     <- tib %>% filter(class %in% class)
+  }
+  # set color palette
+  pal <- c('navyblue', 'gray95', 'orangered')
+
+  # static viz
+  print("1")
+
+      # compute coop index range
+      y_min <- min(tib[['boost']], na.rm = TRUE)
+      y_max <- max(tib[['boost']], na.rm = TRUE)
+
+      # coop index heatmap (additive)
+      p_main <- tib %>%
+        ggplot(aes(x = id1, y = id2)) +
+        geom_tile(fill = 'gray40') +
+        #        geom_tile(color = 'gray20', alpha = 0, size = 0.5) + ## prev version with stroke
+        #        geom_tile(fill = rgb(53/255, 143/255, 168/255, 0.1)) + ## prev version with color outside coop idx palette
+        geom_raster(data = tib, aes(x = id1, y = id2, fill = boost))
+    print("2")
+    # cosmetics
+    p_main <- p_main +
+      scale_fill_gradientn(colors = pal,
+                           values = scales::rescale(c(y_min, 0, y_max))) +
+      labs(x = 'Fragment 1', y = 'Fragment 2', fill = 'Boost Index', caption = paste0('(n = ', nrow(tib), ' pairs)')) +
+      theme(axis.text.x      = element_text(angle = 90, color =  c('black', rep('transparent', skip_n_lab))),
+            axis.text.y      = element_text(color =  c('black', rep('transparent', 1))),
+            panel.grid       = element_blank(),
+            panel.background = element_rect(fill = "white"),
+            legend.position  = 'bottom',
+            text             = element_text(size = 13),)+
+      ggtitle((tib$Promoter)[[1]])
+
+    print("3")
+
+  p_main
+
+
+
+}
+```
+
+### Activity matrices
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Sox2
+tib_Split_EEP_Sox2_Activities%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Klf2
+tib_Split_EEP_Klf2_Activities%>%
+  filter(Promoter=="P2_KLF2")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#OTX3
+tib_Split_EEP_Otx2_Activities%>%
+  filter(Promoter=="P3_OTX2")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#FGF5
+tib_Split_EEP_FGF5_Activities%>%
+  filter(Promoter=="P4_FGF5")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Lefty1
+tib_Split_EEP_Lefty1_Activities%>%
+  filter(Promoter=="P5_Lefty1")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Nanog
+tib_Split_EEP_Nanog_Activities%>%
+  filter(Promoter=="P6_Nanog")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Ap1m1
+tib_Split_EEP_P14_Activities%>%
+  filter(Promoter=="P7_Ap1m1")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Tbx3
+tib_Split_EEP_Tbx3_Activities%>%
+  filter(Promoter=="P8_Tbx3")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+
+```
+
+### AVG orientations
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Sox2
+tib_Split_EEP_Sox2_Activities%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Klf2
+tib_Split_EEP_Klf2_Activities%>%
+  filter(Promoter=="P2_KLF2")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#OTX3
+tib_Split_EEP_Otx2_Activities%>%
+  filter(Promoter=="P3_OTX2")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#FGF5
+tib_Split_EEP_FGF5_Activities%>%
+  filter(Promoter=="P4_FGF5")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Lefty1
+tib_Split_EEP_Lefty1_Activities%>%
+  filter(Promoter=="P5_Lefty1")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Nanog
+tib_Split_EEP_Nanog_Activities%>%
+  filter(Promoter=="P6_Nanog")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Ap1m1
+tib_Split_EEP_P14_Activities%>%
+  filter(Promoter=="P7_Ap1m1")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Tbx3
+tib_Split_EEP_Tbx3_Activities%>%
+  filter(Promoter=="P8_Tbx3")%>%
+   filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+mutate(boost= activity_all)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+
+```
+### Boost matrices 
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Sox2
+tib_Split_EEP_Sox2_Boost%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Sox2 AVG
+tib_Split_EEP_Sox2_Boost%>%
+  filter(Promoter=="P1_SOX2")%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Klf2
+tib_Split_EEP_Klf2_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Klf2 AVG
+tib_Split_EEP_Klf2_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Otx2
+tib_Split_EEP_Otx2_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Otx2 AVG
+tib_Split_EEP_Otx2_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#FGF5
+tib_Split_EEP_FGF5_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#FGF5 AVG
+tib_Split_EEP_FGF5_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Lefty1
+tib_Split_EEP_Lefty1_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Lefty1 AVG
+tib_Split_EEP_Lefty1_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Nanog
+tib_Split_EEP_Nanog_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Nanog AVG
+tib_Split_EEP_Nanog_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#P14
+tib_Split_EEP_P14_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#P14 AVG
+tib_Split_EEP_P14_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP, fig.width=15, fig.height=10}
+#Tbx3
+tib_Split_EEP_Tbx3_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Tbx3 AVG
+tib_Split_EEP_Tbx3_Boost%>%
+    filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA,NaN,Inf, -Inf))%>%
+  filter(!frag1%in%c("empty_eempty", "unknown_uunknown"))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+
+## Focus
+```{r fig.width=10, fig.height=7}
+
+#Sox2
+tib_Split_EEP_Sox2_Boost%>%mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Random", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Random", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"Random"), "Controls", cluster))%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(cluster %in% c('Sox2', "Random"))%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Sox2 AVG
+tib_Split_EEP_Sox2_Boost%>%mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Random", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Random", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"Random"), "Controls", cluster))%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(cluster %in% c('Sox2', "Random"))%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+    group_by(frag1, frag2, Promoter)%>%
+  summarise(boost=mean(boost))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+```
+# Calculate boost per single element
+
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_Sox2<-tib_Split_EEP_Sox2_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_Sox2<-tib_Split_EEP_Sox2_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_Klf2<-tib_Split_EEP_Klf2_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_Klf2<-tib_Split_EEP_Klf2_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_Otx2<-tib_Split_EEP_Otx2_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_Otx2<-tib_Split_EEP_Otx2_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_FGF5<-tib_Split_EEP_FGF5_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_FGF5<-tib_Split_EEP_FGF5_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_Lefty1<-tib_Split_EEP_Lefty1_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_Lefty1<-tib_Split_EEP_Lefty1_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_Nanog<-tib_Split_EEP_Nanog_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_Nanog<-tib_Split_EEP_Nanog_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_P14<-tib_Split_EEP_P14_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_P14<-tib_Split_EEP_P14_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+```{r}
+# Calc baseline per single element
+NormEEPSingle1_Tbx3<-tib_Split_EEP_Tbx3_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix2=="Controls")%>%
+    group_by(frag1,Promoter)%>%
+  summarise(Baseline1=median(activity_all), n=n(), StDevBaseline1= sd(activity_all)) %>%
+  filter(n>5)
+
+NormEEPSingle2_Tbx3<-tib_Split_EEP_Tbx3_Boost %>%
+     mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!(frag1==frag2 & strand1==strand2))%>%
+  filter(cluster=="SingleControls")%>%
+  filter(suffix1=="Controls")%>%
+  group_by(frag2,Promoter)%>%
+  summarise(Baseline2=median(activity_all), n=n(), StDevBaseline2= sd(activity_all)) %>%
+  filter(n>5)
+```
+
+
+## norm
+
+
+```{r}
+tib_Split_EEP_Sox2_normDual<-tib_Split_EEP_Sox2_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_Sox2%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_Sox2%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_Klf2_normDual<-tib_Split_EEP_Klf2_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_Klf2%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_Klf2%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_Otx2_normDual<-tib_Split_EEP_Otx2_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_Otx2%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_Otx2%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_FGF5_normDual<-tib_Split_EEP_FGF5_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_FGF5%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_FGF5%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_Lefty1_normDual<-tib_Split_EEP_Lefty1_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_Lefty1%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_Lefty1%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_Nanog_normDual<-tib_Split_EEP_Nanog_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_Nanog%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_Nanog%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_P14_normDual<-tib_Split_EEP_P14_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_P14%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_P14%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+```{r}
+tib_Split_EEP_Tbx3_normDual<-tib_Split_EEP_Tbx3_Boost%>%
+  mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Controls", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Controls", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2,
+                         ifelse(suffix1== "Controls" |suffix2== "Controls" ,"SingleControls",
+                         "Rest")))%>%
+    filter(!((frag1==frag2) & (strand1==strand2)))%>%
+  left_join(.,NormEEPSingle1_Tbx3%>%
+  ungroup(), by=c("frag1", "Promoter"))%>%
+  left_join(.,NormEEPSingle2_Tbx3%>%
+  ungroup(), by=c("frag2", "Promoter"))%>%
+  #mutate(AdditiveCoop= log2((Activity-Baseline)/(Baseline1+Baseline2-(2*Baseline))))%>%
+  mutate(AdditiveCoop= log2((activity_all)/(Baseline1+Baseline2-Baseline)))%>%
+  mutate(Additivebaseline= Baseline1+Baseline2-Baseline)%>%
+ mutate(MiltipCoop= log2((activity_all/Baseline)/(Baseline1*Baseline2/(Baseline*Baseline))))%>%
+  mutate(Boost1= log2((Baseline1)/(Baseline)))%>%
+  mutate(Boost2= log2((Baseline2)/(Baseline)))%>%
+  mutate(Coop= boost-Boost1-Boost2)%>%
+  mutate(R1= (Baseline1)/(Baseline))%>%
+  mutate(R2= (Baseline2)/(Baseline))%>%
+  mutate(Coop2= log2(boost-R1-R2))
+
+
+```
+
+
+# Save dataset norm
+
+```{r}
+save(list = c('tib_Split_EEP_Sox2_normDual','tib_Split_EEP_Klf2_normDual','tib_Split_EEP_Otx2_normDual','tib_Split_EEP_FGF5_normDual','tib_Split_EEP_Lefty1_normDual','tib_Split_EEP_Nanog_normDual','tib_Split_EEP_P14_normDual','tib_Split_EEP_Tbx3_normDual'),
+     file = '~/mydata/GitLab/epmatrix/data/MMA20230210_EEP_E143_DeepSeq_Norm.RData')
+```
+
+```{r}
+## Remove Objects not needed
+rm(list = ls())
+```
+
+
+```{r}
+# reload data 
+load('~/mydata/GitLab/epmatrix/data/MMA20230210_EEP_E143_DeepSeq_Norm.RData')
+```
+
+
+# single element effects
+
+```{r}
+tib_Split_EEP_Sox2_normDual%>%
+  filter(suffix1=="Sox2", suffix2=="Controls")%>%
+  group_by(frag1)%>%
+  summarise(Boost1=mean(Boost1))%>%
+  ggplot(aes(frag1, Boost1, fill=frag1))+
+  geom_bar(stat = "identity")+
+  theme_bw()
+
+tib_Split_EEP_Sox2_normDual%>%
+  filter(suffix2=="Sox2", suffix1=="Controls")%>%
+  group_by(frag2)%>%
+  summarise(Boost2=mean(Boost2))%>%
+  ggplot(aes(frag2, Boost2, fill=frag2))+
+  geom_bar(stat = "identity")+
+  theme_bw()
+```
+
+# Dual element effects
+
+```{r fig.width=10}
+tib_Split_EEP_Sox2_normDual%>%
+  filter(suffix1=="Sox2", suffix2=="Sox2")%>%
+  group_by(frag1, frag2)%>%
+  summarise(boost=mean(boost))%>%
+  ggplot(aes(paste0(frag1, frag2), boost, fill=boost))+
+  geom_bar(stat = "identity")+
+    theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+
+tib_Split_EEP_Sox2_normDual%>%
+  filter(suffix1=="Sox2", suffix2=="Sox2")%>%
+  group_by(frag1, frag2)%>%
+  summarise(AdditiveCoop=mean(AdditiveCoop))%>%
+  ggplot(aes(paste0(frag1, frag2), AdditiveCoop, fill=AdditiveCoop))+
+  geom_bar(stat = "identity")+
+    theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+
+```
+
+## Relative boost matrix
+
+
+
+## Make coop matrix
+
+```{r fig.width=15, fig.height=10}
+tib_Split_EEP_Sox2_normDual%>% 
+    filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline))%>%
+  ggplot(aes(Promoter, Additivebaseline))+
+  geom_violin()
+```
+
+```{r HeatmapsEEP_Add, fig.width=15, fig.height=10}
+#Sox2
+tib_Split_EEP_Sox2_normDual%>%mutate(suffix1= ifelse(grepl('shuffled',suffix1) ,"Controls", 
+                             ifelse(grepl('Random',suffix1) ,"Random", suffix1)))%>%
+        mutate(suffix2= ifelse(grepl('shuffled',suffix2) ,"Controls", 
+                             ifelse(grepl('Random',suffix2) ,"Random", suffix2)))%>%
+  mutate(cluster= ifelse(suffix1==suffix2 ,suffix2, "Rest"))%>%
+  mutate(cluster=ifelse(!cluster%in%c("unknown",				
+"Rest",				
+"empty"	,			
+'Sox2'	,			
+"Nodal"	,			
+'Pou5f1',				
+'Nanog'		,		
+"Otx2",				
+"Tbx3",
+"Klf2"	,			
+'Lefty1',
+"Fgf5",
+"Random"), "Controls", cluster))%>%
+  filter(cluster %in% c('Sox2', "Random"))%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+#Sox2
+tib_Split_EEP_Sox2_normDual%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_Klf2, fig.width=15, fig.height=10}
+#Klf2
+tib_Split_EEP_Klf2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_Otx2, fig.width=15, fig.height=10}
+#Otx2
+tib_Split_EEP_Otx2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+
+```{r HeatmapsEEP_Add_Otx2, fig.width=15, fig.height=10}
+#Otx2
+tib_Split_EEP_Otx2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_FGF5, fig.width=15, fig.height=10}
+#FGF5
+tib_Split_EEP_FGF5_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_Lefty1, fig.width=15, fig.height=10}
+#Lefty1
+tib_Split_EEP_Lefty1_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+    filter(!boost%in%c(NA, Inf,-Inf))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_Nanog, fig.width=15, fig.height=10}
+#Nanog
+tib_Split_EEP_Nanog_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+      filter(!boost%in%c(NA, Inf,-Inf))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_P14, fig.width=15, fig.height=10}
+#P14
+tib_Split_EEP_P14_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      filter(!boost%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+```{r HeatmapsEEP_Add_Tbx3, fig.width=15, fig.height=10}
+#Tbx3
+tib_Split_EEP_Tbx3_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+      #filter(boost>0.1)%>%
+      filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all))%>%
+  mutate(boost=log2(Activity/Additivebaseline))%>%
+  mutate(id1=frag1, id2=frag2)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+
+```
+
+## check additivity
+
+```{r fig.width=10, fig.height=10}
+
+
+#Sox2
+tib_Split_EEP_Sox2_normDual%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_Sox2_normDual%>%
+  filter(Promoter%in%c("P1_SOX2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+
+
+#Klf2
+tib_Split_EEP_Klf2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_Klf2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+```{r fig.width=10, fig.height=10}
+
+
+#Otx2
+tib_Split_EEP_Otx2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_Otx2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+```{r fig.width=10, fig.height=10}
+
+
+#FGF5
+tib_Split_EEP_FGF5_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_FGF5_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+```{r fig.width=5, fig.height=5}
+
+
+#Lefty1
+tib_Split_EEP_Lefty1_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_Lefty1_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.3)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)+
+  xlab("log2(Activity")+
+  ylab("log2(Estimated Add Activity")
+
+```
+
+```{r fig.width=10, fig.height=10}
+
+
+#Nanog
+tib_Split_EEP_Nanog_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_Nanog_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+```{r fig.width=10, fig.height=10}
+
+
+#P14
+tib_Split_EEP_P14_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_P14_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+```{r fig.width=10, fig.height=10}
+
+
+#Tbx3
+tib_Split_EEP_Tbx3_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Addboost))+
+  geom_point(alpha=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+tib_Split_EEP_Tbx3_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  facet_wrap(~Promoter)
+
+```
+
+
+
+# Test positional effect
+
+```{r fig.width=7, fig.height=5}
+
+inner_join(NormEEPSingle1_Sox2,NormEEPSingle2_Sox2, by=c("Promoter", "frag1"="frag2"))%>%
+  ggplot(aes(log2(Baseline1), log2(Baseline2), color=frag1))+
+  geom_point()+
+  theme_bw()+
+  coord_fixed()+
+  geom_abline(slope = 1)+
+  facet_wrap(~Promoter)
+  
+inner_join(NormEEPSingle1_Sox2,NormEEPSingle2_Sox2, by=c("Promoter", "frag1"="frag2"))%>%
+  left_join(.,NormEEP_Sox2, by=c("Promoter"))%>%
+  ggplot(aes(log2(Baseline1/Baseline), log2(Baseline2/Baseline), color=frag1))+
+  geom_point()+
+  theme_bw()+
+  coord_fixed()+
+  geom_abline(slope = 1)+
+  facet_wrap(~Promoter)
+  
+
+```
+
+# Correlation between promoters
+
+```{r}
+
+dualEffectsNanog<-tib_Split_EEP_Nanog_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+dualEffectsOTX2<-tib_Split_EEP_Otx2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+inner_join(dualEffectsNanog, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Boost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsNanog, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Addboost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsNanog, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+
+```
+
+```{r}
+
+dualEffectsLefty1<-tib_Split_EEP_Lefty1_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+inner_join(dualEffectsLefty1, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.25, size=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsLefty1, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( log2(Activity.x), log2(Activity.y)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsLefty1, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Boost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  xlab("Boost (log2) Lefty1")+
+  ylab("Boost (log2) Otx2")
+
+inner_join(dualEffectsLefty1, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Addboost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsLefty1, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+
+```
+
+
+```{r}
+
+dualEffectsSox2<-tib_Split_EEP_Sox2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+dualEffectsKLF2<-tib_Split_EEP_Klf2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+dualEffectsAp1m1<-tib_Split_EEP_P14_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+
+inner_join(dualEffectsSox2, dualEffectsOTX2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.25, size=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Otx2 linear")
+
+inner_join(dualEffectsSox2, dualEffectsLefty1, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.25, size=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Lefty1 linear")
+
+inner_join(dualEffectsSox2, dualEffectsNanog, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.5, size=1)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Nanog linear")
+
+inner_join(dualEffectsSox2, dualEffectsNanog, by=c("frag1", "frag2"))%>%
+  mutate(Sox2Clust=ifelse(frag1 %in% c("Sox2_E178","Sox2_E179","Sox2_E180","Sox2_E181","Sox2_E182") & frag2 %in% c("Sox2_E178","Sox2_E179","Sox2_E180","Sox2_E181","Sox2_E182"), "Yes", NA))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.7, size=1.5, aes(color=Sox2Clust))+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Nanog linear")
+
+inner_join(dualEffectsLefty1, dualEffectsNanog, by=c("frag1", "frag2"))%>%
+  mutate(Sox2Clust=ifelse(frag1 %in% c("Sox2_E178","Sox2_E179","Sox2_E180","Sox2_E181","Sox2_E182") & frag2 %in% c("Sox2_E178","Sox2_E179","Sox2_E180","Sox2_E181","Sox2_E182"), "Yes", NA))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.7, size=1.5, aes(color=Sox2Clust))+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Lefty1 vs Nanog linear")
+
+inner_join(dualEffectsSox2, dualEffectsNanog, by=c("frag1", "frag2"))%>%
+  mutate(NanogClust=ifelse(frag1 %in% c("Nanog_E064","Nanog_E065","Nanog_E071","Nanog_E073","Nanog_E074", "Nanog_E088", "Nanog_E089", "Nanog_E090") & frag2 %in% c("Nanog_E064","Nanog_E065","Nanog_E071","Nanog_E073","Nanog_E074", "Nanog_E088", "Nanog_E089", "Nanog_E090"), "Yes", NA))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.7, size=1.5, aes(color=NanogClust))+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Nanog linear")
+
+inner_join(dualEffectsSox2, dualEffectsKLF2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.5, size=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Klf2 linear")
+
+inner_join(dualEffectsKLF2, dualEffectsNanog, by=c("frag1", "frag2"))%>%
+  mutate(NanogClust=ifelse(frag1 %in% c("Nanog_E064","Nanog_E065","Nanog_E071","Nanog_E073","Nanog_E074", "Nanog_E088", "Nanog_E089", "Nanog_E090") & frag2 %in% c("Nanog_E064","Nanog_E065","Nanog_E071","Nanog_E073","Nanog_E074", "Nanog_E088", "Nanog_E089", "Nanog_E090"), "Yes", NA))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.5, size=1.5, aes(color=NanogClust))+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+ggtitle("Klf2 vs Nanog linear")
+
+inner_join(dualEffectsLefty1, dualEffectsNanog, by=c("frag1", "frag2"))%>%
+  mutate(NanogClust=ifelse(frag1 %in% c("Nanog_E064","Nanog_E065","Nanog_E071","Nanog_E073","Nanog_E074", "Nanog_E088", "Nanog_E089", "Nanog_E090") & frag2 %in% c("Nanog_E064","Nanog_E065","Nanog_E071","Nanog_E073","Nanog_E074", "Nanog_E088", "Nanog_E089", "Nanog_E090"), "Yes", NA))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.5, size=1.5, aes(color=NanogClust))+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+ggtitle("Lefty1 vs Nanog linear")
+
+inner_join(dualEffectsSox2, dualEffectsAp1m1, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Activity.x, Activity.y))+
+  geom_point(alpha=0.25, size=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth()+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  ggtitle("Sox2 vs Ap1m1 linear")
+
+
+```
+
+```{r}
+
+inner_join(dualEffectsLefty1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( log2(Activity.x), log2(Activity.y)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsLefty1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Boost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsLefty1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Addboost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsLefty1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+
+```
+
+```{r}
+
+dualEffectsAp1m1<-tib_Split_EEP_P14_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+dualEffectsTbx3<-tib_Split_EEP_Tbx3_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+
+inner_join(dualEffectsAp1m1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( log2(Activity.x), log2(Activity.y)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsAp1m1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Boost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsAp1m1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Addboost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsAp1m1, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+
+```
+
+```{r}
+
+dualEffectsKLF2<-tib_Split_EEP_Klf2_normDual%>%
+filter(!Promoter%in%c("SP_Zfp822", "SP_Klf2"))%>%
+  ungroup()%>%
+  filter(!boost%in%c(NA, Inf,-Inf))%>%
+  group_by(frag1, frag2, Promoter)%>%
+  summarise(Additivebaseline=mean(Additivebaseline), Activity=mean(activity_all), Baseline=mean(Baseline))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline), Boost=log2((Activity/Baseline)))
+
+inner_join(dualEffectsKLF2, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( log2(Activity.x), log2(Activity.y)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsKLF2, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Boost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsKLF2, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Addboost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsKLF2, dualEffectsTbx3, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+
+```
+
+```{r}
+
+inner_join(dualEffectsAp1m1, dualEffectsKLF2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( log2(Activity.x), log2(Activity.y)))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsAp1m1, dualEffectsKLF2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Boost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsAp1m1, dualEffectsKLF2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Addboost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+inner_join(dualEffectsAp1m1, dualEffectsKLF2, by=c("frag1", "frag2"))%>%
+  ggplot(aes( Boost.x, Addboost.y))+
+  geom_point(alpha=0.5)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+
+```
+
+
+
+# Correlation between single elements
+
+```{r}
+inner_join(NormEEPSingle1%>%
+             filter(Promoter%in%c("P5_Lefty1")),NormEEPSingle1%>%
+             filter(Promoter%in%c("P3_OTX2")), by=c("frag1"))%>%
+  ggplot(aes(log2(Baseline1.x), log2(Baseline1.y), color=frag1))+
+  geom_point()+
+  theme_bw()+
+  coord_fixed()+
+  geom_abline(slope = 1)
+```
+
