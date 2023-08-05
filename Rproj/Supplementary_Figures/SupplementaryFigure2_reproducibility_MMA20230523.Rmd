@@ -1,0 +1,362 @@
+---
+title: "FigureS2_reproducibility_MMA20230523"
+author: "MMA"
+date: "2023-05-23"
+output: html_document
+---
+
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+---
+
+# Intro
+
+Here we plot the correlations between biological replicates for each of the EEP libraries.
+
+These plots are included in Supplementary figure 5.
+
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+
+```{r reproducibilityReps_Sox2, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_Sox2_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05, alpha=0.3)))+
+  theme_bw()
+
+ggally_hexbin <- function (data, mapping, ...)  {
+    p <- ggplot(data = data, mapping = mapping) + geom_hex(...)
+    p
+}
+
+m=tib_Split_EEP_Sox2_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+```{r reproducibilityReps_Klf2, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_Klf2_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_Klf2_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+
+```{r reproducibilityReps_Otx2, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_Otx2_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_Otx2_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+
+```{r reproducibilityReps_Fgf5, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_FGF5_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_FGF5_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+
+```{r reproducibilityReps_Lefty1, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_Lefty1_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_Lefty1_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+
+```{r reproducibilityReps_Nanog, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_Nanog_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_Nanog_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+```{r reproducibilityReps_Ap1m1, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_P14_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_P14_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```
+
+
+```{r reproducibilityReps_Tbx3, fig.height=4, fig.width=4}
+
+
+# Reproducibility between all pairs in the 3 reps Log transformed Klf2
+tib_Split_EEP_Tbx3_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+ ggpairs(columns =14:16, lower = list(continuous = wrap("points", size=0.05)))+
+  theme_bw()
+
+
+m=tib_Split_EEP_Tbx3_normDual%>%
+    #filter(DAT%in%c("klf2", "Nanog"))%>%
+    mutate(activity_br1=log2(activity_br1))%>%
+  mutate(activity_br2=log2(activity_br2))%>%
+  mutate(activity_br3=log2(activity_br3))%>%
+  filter(!activity_br3%in%c(NA,Inf,-Inf))%>%
+    filter(!activity_br2%in%c(NA,Inf,-Inf))%>%
+  filter(!activity_br1%in%c(NA,Inf,-Inf))%>%
+  ggpairs(columns =14:16  , lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+m+theme_bw()
+
+```

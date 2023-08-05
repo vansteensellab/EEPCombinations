@@ -1,0 +1,176 @@
+---
+title: "Supplementary_Figure3_PositionOrientiationEffects_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+--- 
+
+# Intro
+
+In this document we explore the effect of position and orientation for single enhancers (enhancer-control combinations).
+These figures belong to Supplementary 
+
+
+# Load data
+
+```{r}
+load('~/mydata/GitLab/epmatrix/data/MMA20230210_EEP_E143_DeepSeq_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+
+# Correlation between orientations
+
+```{r PositionBias , fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+Single_effects1<-tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  filter(!suffix1=="Controls")%>%
+  group_by(frag1, Promoter)%>%
+  summarise(meabboost=mean(boost))%>%
+    mutate(id=paste0(frag1,"_",Promoter))
+
+Single_effects2<-tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  filter(!suffix2=="Controls")%>%
+  group_by(frag2, Promoter)%>%
+  summarise(meabboost=mean(boost))%>%
+  mutate(id=paste0(frag2,"_",Promoter))
+ 
+
+inner_join(Single_effects1,Single_effects2, by="id")%>%
+ ggplot(aes(meabboost.x, meabboost.y))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+geom_point()+
+  coord_fixed()+
+  theme_bw(base_size = 10)+
+  ggtitle("Position bias")+
+  stat_cor()
+  #facet_wrap(~Promoter)
+
+
+inner_join(Single_effects1,Single_effects2, by="id")%>%
+ ggplot(aes(meabboost.x, meabboost.y))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+geom_point()+
+  coord_fixed()+
+  theme_bw(base_size = 10)+
+  ggtitle("E+C Position bias")+
+  facet_wrap(~Promoter.x)
+  
+```
+
+```{r OrientationBias , fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+Single_effects1plus<-tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  filter(!suffix1=="Controls")%>%
+  group_by(frag1,strand1, Promoter)%>%
+  summarise(meabboost=mean(boost))%>%
+    mutate(id=paste0(frag1,"_",Promoter))%>%
+  filter(strand1=="+")
+
+
+Single_effects1minus<-tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  filter(!suffix1=="Controls")%>%
+  group_by(frag1,strand1, Promoter)%>%
+  summarise(meabboost=mean(boost))%>%
+    mutate(id=paste0(frag1,"_",Promoter))%>%
+  filter(strand1=="-")
+
+
+Single_effects2plus<-tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  filter(!suffix2=="Controls")%>%
+  group_by(frag2,strand2, Promoter)%>%
+  summarise(meabboost=mean(boost))%>%
+  mutate(id=paste0(frag2,"_",Promoter))%>%
+  filter(strand2=="+")
+
+Single_effects2minus<-tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  filter(!suffix2=="Controls")%>%
+  group_by(frag2,strand2, Promoter)%>%
+  summarise(meabboost=mean(boost))%>%
+  mutate(id=paste0(frag2,"_",Promoter))%>%
+  filter(strand2=="-")
+ 
+
+inner_join(Single_effects1plus,Single_effects1minus, by="id")%>%
+ ggplot(aes(meabboost.x, meabboost.y))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+geom_point()+
+  coord_fixed()+
+  theme_bw(base_size = 10)+
+  ggtitle("Position1_Plus_vs_minus")+
+  stat_cor()
+  #facet_wrap(~Promoter)
+
+inner_join(Single_effects2plus,Single_effects2minus, by="id")%>%
+ ggplot(aes(meabboost.x, meabboost.y))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+geom_point()+
+  coord_fixed()+
+  theme_bw(base_size = 10)+
+  ggtitle("Position2_Plus_vs_minus")+
+  stat_cor()
+  #facet_wrap(~Promoter)
+```

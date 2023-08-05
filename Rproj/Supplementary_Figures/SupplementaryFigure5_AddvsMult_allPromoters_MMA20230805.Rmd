@@ -1,0 +1,161 @@
+---
+title: "SupplementaryFigure5_AddvsMult_allPromoters_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+--- 
+
+# Intro
+
+Here we plot the additive and multiplicative activity estimates vs the measured for all promoters.
+
+These plots are included in Supplementary figure 5.
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+
+
+# Prepare data
+```{r fig.height=3, fig.width=3.5}
+#prepare data
+tib_Split_EEP_All_normDual_PropSd <- tib_Split_EEP_All_normDual%>%
+  filter(!is.na(Additivebaseline))%>%
+  #propagateSDs square root of sum of squares of individual sds
+  mutate(MulltipBAseline=Baseline1*Baseline2/Baseline)%>%
+  mutate(AdditiveSd=sqrt((StDevBaseline^2)+(StDevBaseline1^2)+(StDevBaseline2^2)))%>%
+   mutate(MultSd=MulltipBAseline*sqrt(((StDevBaseline/Baseline)^2)+((StDevBaseline1/Baseline1)^2)+((StDevBaseline2/Baseline2)^2)))%>%
+  #is measured activity within Additive estimate +-1sd
+  #filter((Additivebaseline-AdditiveSd)>0)
+  mutate(SignifAddDev=ifelse(activity_all> (Additivebaseline-AdditiveSd) & activity_all< (Additivebaseline+AdditiveSd),"No", "Yes"))%>%
+  mutate(SignifAddDev2sd=ifelse(activity_all> (Additivebaseline-2*AdditiveSd) & activity_all< (Additivebaseline+2*AdditiveSd),"No", "Yes"))%>%
+mutate(SignifMultDev=ifelse(activity_all> (MulltipBAseline-MultSd) & activity_all< (MulltipBAseline+MultSd),"No", "Yes"))%>%
+  mutate(SignifMultDev2sd=ifelse(activity_all> (MulltipBAseline-2*MultSd) & activity_all< (MulltipBAseline+2*MultSd),"No", "Yes"))%>%
+  mutate(SupraddNotMult=ifelse(activity_all> (Additivebaseline+AdditiveSd) & activity_all< (MulltipBAseline),"Yes", "No"))%>%
+mutate(SupraddMult=ifelse(abs(log2(MulltipBAseline/Additivebaseline))> 0.5 & activity_all> (MulltipBAseline),"Yes", "No"))%>%
+mutate(ClosertoMult=ifelse(abs(log2(MulltipBAseline/Additivebaseline))> 0.5 & abs(activity_add-Additivebaseline)>abs(activity_all-MulltipBAseline),"Yes", "No"))
+
+```
+
+# Additive mode
+
+```{r AllPAddCorr, fig.width=10, fig.height=10}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  #geom_point(alpha=0.5, size=0.5)+
+  #geom_hex(size=0.01)+
+  geom_bin_2d(binwidth=c(0.1,0.1))+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor(,
+  label.x = -5,
+  label.y = -7.5)+
+  facet_wrap(~Promoter)+
+      stat_cor(
+   aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+  label.x = -5,
+  label.y = -8.5
+)
+  
+```
+
+# Multiplicative mode
+
+```{r AllPMultipCorr, fig.width=10, fig.height=10}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( boost, Boost1+Boost2))+
+  geom_point(alpha=0.5, size=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor()+
+  facet_wrap(~Promoter)+
+      stat_cor(
+   aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+  label.x = -5,
+  label.y = 2
+)
+  
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+#mutate(MultipBaseline=(Baseline1-Baseline)*(Baseline2-Baseline)+(Baseline))%>%
+  mutate(MultipBaseline=log2(Baseline1*Baseline2/Baseline))%>%
+    ggplot(aes( log2(activity_all), MultipBaseline))+
+  geom_bin_2d(binwidth=c(0.1,0.1))+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor(,
+  label.x = -5,
+  label.y = -7.5)+
+  facet_wrap(~Promoter)+
+      stat_cor(
+   aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+  label.x = -5,
+  label.y = -8.5
+)
+  
+```

@@ -1,0 +1,125 @@
+---
+title: "SupplementaryFigure6_Promoter_Promoter_correlationMatrix_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+--- 
+
+# Intro
+
+Here we plot promoter-promoter boost index correlation matrix.
+
+These plots are included in Supplementary figure 6.
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+# Corrs between Ps
+
+```{r CorrMatixBoost, fig.width = 8,fig.height = 8}
+# prepare wider data matrix
+PairsObjectCorr <-tib_Split_EEP_All_normDual %>%
+    filter(!activity_all%in%c(NaN, Inf, -Inf, 0))%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Duplets")%>%
+  select(id, Promoter, boost)%>%
+  pivot_wider(names_from = Promoter, values_from = boost)
+
+#Trick to add identity line, linear fit, and correlations on upper right panel
+#dotplot
+m=PairsObjectCorr%>%
+  ggpairs(columns = 2:9,  lower = list(continuous = wrap("points", alpha = 0.3, size=0.5)))
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+for (i in 2:m$nrow) {
+  for (j in 1:(i-1)) {
+    m[i,j] = m[i,j] + geom_smooth(method = "lm")
+  }
+}
+m+theme_bw()
+
+
+
+#Trick to use a 2d hexbin fensity plot, add identity line, linear fit, and correlations on upper right panel
+#dotplot
+#Hexbin
+ggally_hexbin <- function (data, mapping, ...)  {
+    p <- ggplot(data = data, mapping = mapping) + geom_hex(...)
+    p
+}
+
+m2=PairsObjectCorr%>%
+  ggpairs(columns = 2:9,   lower = list(continuous = "hexbin", 
+    ## use default plots for all other variable types
+    combo = "facethist", discrete = "facetbar", na =  "na"))
+for (i in 2:m2$nrow) {
+  for (j in 1:(i-1)) {
+    m2[i,j] = m2[i,j] + geom_abline(intercept=0,slope=1)
+  }
+}
+
+for (i in 2:m2$nrow) {
+  for (j in 1:(i-1)) {
+    m2[i,j] = m2[i,j] + geom_smooth(method = "lm")
+  }
+}
+m2+theme_bw()
+
+```

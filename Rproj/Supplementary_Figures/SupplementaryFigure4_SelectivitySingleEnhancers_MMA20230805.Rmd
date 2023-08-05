@@ -1,0 +1,487 @@
+---
+title: "SupplementaryFigure4_SelectivitySingleEnhancers_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+
+```{r knitr setup, include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+library(onewaytests)
+library(ggbeeswarm)
+```
+
+---
+
+# Aim
+
+Here I am replicating the selectivity analysis done in the EP paper (Martinez-Ara et al., 2022) for the single enhancer (Enhancer-control-Promoter) combinations. Once the selectivity is checked I am generating publication grade figures for the EEP paper.
+
+These plots are included in Supplementary Figure 4.
+
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+
+# Welch test
+
+```{r}
+##Neccessary chunk moved around
+VarPErE_AvgOr_within<-tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+  #filter(log2(activity_all_frag2)>-1)%>%
+     filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  group_by(frag, Promoter)%>%
+  summarise(BiolVarAvgOr_within=var(boost), nrep=n())%>%
+  filter(!BiolVarAvgOr_within%in%c(NA,NaN,Inf,-Inf))%>%
+  ungroup()%>%
+  group_by(frag)%>%
+  summarise(n2=n(),WithinVariance=sum(BiolVarAvgOr_within)/n2, k=sum(nrep))
+  
+
+VarPErE_AvgOr_between<-tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+       filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  #filter(log2(activity_all_frag2)>-1)%>%
+  group_by(frag, Promoter)%>%
+  summarise(BoostPerPmedAvgOr=mean(boost))%>%
+  ungroup()%>%
+  group_by(frag)%>%
+  summarise(variance=var(BoostPerPmedAvgOr), n=n())%>%
+  left_join(VarPErE_AvgOr_within)%>%
+  mutate(axis="y(enhancers)")%>%
+  filter(!variance%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(!WithinVariance%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(n>5)%>%
+  mutate(p_pvalue= pf(variance/WithinVariance, n-1, k-n, lower.tail = FALSE))%>%
+  mutate(correctedPvalue=p.adjust(p_pvalue, "BH"))
+```
+
+
+
+```{r include=FALSE}
+
+
+## Alternative F test to ANOVA Welch F test used when data is heterocedastic as it is our case.
+
+
+forWelch<-tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  # This time I use combinations as single observations
+  #filter(!BoostPerPmed%in%c(NA,NaN,Inf,-Inf))%>%  
+   #mutate(BoostPerPmed1=log2(activity_br1/Basal_median))%>%
+    #mutate(BoostPerPmed2=log2(activity_br2/Basal_median))%>%
+    #mutate(BoostPerPmed3=log2(activity_br3/Basal_median))%>%
+  mutate(activity_all=log2(activity_all))%>%
+  #pivot_longer(c(BoostPerPmed1, BoostPerPmed2, BoostPerPmed3), names_to = "rep", values_to = "BoostperPmedall")%>%
+  filter(frag%in%VarPErE_AvgOr_between$frag)
+
+forWelch%>%
+  filter(frag=="Fgf5_E038")
+WelchTestEnhancers<-tibble(frag1=NA, pvalue=NA, fstatistic=NA, df1=NA, df2=NA )
+
+for (i in unique(forWelch$frag)) {
+  print(i)
+  if (i =="Fgf5_E038") {
+    break
+  }else {
+  wFtest<-forWelch%>%
+    filter(frag==i)%>%
+    filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+    welch.test(boost ~ Promoter, .)
+  
+  WelchTestEnhancers<-WelchTestEnhancers%>%
+    add_row(frag1=i, pvalue=wFtest$p.value, fstatistic=wFtest$statistic, df1=wFtest$parameter[1], df2=wFtest$parameter[2])}
+}
+
+
+### Both seem to work better than the anova as they pick up more significant cases than the Anova
+```
+
+
+
+
+```{r}
+WelchTestEnhancers%>%
+  ggplot(aes(pvalue))+
+  geom_histogram()
+
+```
+
+
+```{r}
+#WelchTestEnhancers%>%
+#    mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+#  mutate(DAT=sapply(str_split(frag1, "_"), function(x) x[2]))%>%
+#  filter(DAT=="klf2")%>%
+#  arrange(frag1)
+
+WelchTestEnhancers%>%
+  mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+  mutate(Axis="enhancers")%>%
+  ggplot(aes(Axis, log10(fstatistic)))+
+  geom_quasirandom(size=0.5, varwidth = TRUE, dodge.width=0.4,aes(color=CorrPvalue<0.01))+
+  theme_bw()
+```
+```{r Fstatistic_vs_MeanBoost, fig.height=5, fig.width=8}
+#WelchTestEnhancers%>%
+#    mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+#  mutate(DAT=sapply(str_split(frag1, "_"), function(x) x[2]))%>%
+#  filter(DAT=="klf2")%>%
+#  arrange(frag1)
+VarPErE_AvgOr_onlyVar<-tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  #filter(log2(activity_all_frag2)>-1)%>%
+  group_by(frag, Promoter)%>%
+  summarise(BoostPerPmed=mean(boost))%>%
+  group_by(frag)%>%
+  summarise(variance=var(BoostPerPmed), nsize=n(), meanboost=mean(BoostPerPmed))
+
+#VarPErE_AvgOr_onlyVar<-VarPErE_AvgOr_between%>%dplyr::select(variance, frag1)
+
+
+
+WelchTestEnhancers%>%
+  mutate(frag=frag1)%>%
+  mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+  mutate(Axis="enhancers")%>%
+  left_join(VarPErE_AvgOr_onlyVar, by=c("frag"))%>%
+  ggplot(aes(meanboost, log10(fstatistic), color=CorrPvalue<0.05))+
+  #geom_quasirandom(size=0.5, varwidth = TRUE, dodge.width=0.4,aes(color=CorrPvalue<0.05))+
+  geom_point(aes(size=nsize), alpha=0.5)+
+  theme_bw()+
+  labs(caption = "233 cRE (combinations>5)")
+```
+```{r Variance_vs_MeanBoost, fig.height=5, fig.width=8}
+WelchTestEnhancers%>%
+  mutate(frag=frag1)%>%
+  mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+  mutate(Axis="enhancers")%>%
+  left_join(VarPErE_AvgOr_onlyVar, by=c("frag"))%>%
+  ggplot(aes(meanboost, log10(variance), color=CorrPvalue<0.05))+
+  #geom_quasirandom(size=0.5, varwidth = TRUE, dodge.width=0.4,aes(color=CorrPvalue<0.05))+
+  geom_point(aes(size=nsize), alpha=0.5)+
+  theme_bw()
+
+```
+```{r }
+WelchTestEnhancers%>%
+  mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+  mutate(significant=ifelse(CorrPvalue<0.05,1,0))%>%
+  filter(!is.na(significant))%>%
+  summarise(n=n(), PercSig=sum(significant)/n, nsignif=sum(significant))
+```
+
+
+```{r BarplotVariancepvalue1, fig.height=10, fig.width=5}
+WelchTestEnhancers%>%
+  mutate(frag=frag1)%>%
+  mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+  mutate(Axis="enhancers")%>%
+  left_join(VarPErE_AvgOr_onlyVar, by=c("frag"))%>%
+  ggplot(aes(reorder(frag1, meanboost),meanboost))+
+  #geom_quasirandom(size=0.5, varwidth = TRUE, dodge.width=0.4,aes(color=CorrPvalue<0.05))+
+  geom_bar(stat="identity")+
+  geom_errorbar( aes(x=reorder(frag1, meanboost), ymin=meanboost-sqrt(variance), ymax=meanboost+sqrt(variance), colour=CorrPvalue<0.05), width=0.4, alpha=0.9, size=1.3)+
+  theme_bw()+
+  labs(caption = "67 Klf2 locus cREs (combinations>5)")+
+  coord_flip()
+```
+
+```{r BarplotVariancepvalue2, fig.height=15, fig.width=7}
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  group_by(frag, Promoter)%>%
+  summarise(BoostPerPmedAvgOrien=mean(boost))%>%
+  filter(frag%in%WelchTestEnhancers$frag1)%>%
+ left_join(WelchTestEnhancers%>%mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>% mutate(frag=frag1) , by=c("frag"))%>%
+  left_join(VarPErE_AvgOr_onlyVar, by=c("frag"))%>%
+    mutate(frag1=sapply(str_split(frag1, "_"), function(x) x[1]))%>% 
+  ggplot(aes(reorder(frag, meanboost),BoostPerPmedAvgOrien, colour=CorrPvalue<0.05))+
+  geom_hline(yintercept = 0, alpha=0.4)+
+  geom_quasirandom(size=1.2, varwidth = TRUE, alpha=0.7)+
+  stat_summary(fun.y = mean, width = 0.5, linetype = "solid", colour="black", geom = "crossbar")+
+  #geom_bar(stat="identity")+
+  #geom_crossbar( aes(x=reorder(frag1, meanboost),y=meanboost, ymin=meanboost-sqrt(variance), ymax=meanboost+sqrt(variance), colour=CorrPvalue<0.05), width=0.4, alpha=0.4, size=0.5)+
+  #geom_crossbar( aes(x=reorder(frag1, meanboost),y=meanboost, ymin=meanboost, ymax=meanboost), colour="black", width=0.4, alpha=1, size=0.5)+
+  #geom_point(aes(reorder(frag1, meanboost),meanboost, colour=CorrPvalue<0.05))+
+  theme_bw(base_size = 15)+
+  labs(caption = "55 enhancers (Promoters>5)")+
+  coord_flip()
+
+WelchTestEnhancers%>%
+  na.omit()%>%
+  mutate(frag=frag1)%>%
+  mutate(CorrPvalue=p.adjust(pvalue, "BH"))%>%
+  mutate(Axis="enhancers")%>%
+  left_join(VarPErE_AvgOr_onlyVar, by=c("frag"))%>%
+  ggplot(aes(reorder(frag1, meanboost),meanboost))+
+  #geom_quasirandom(size=0.5, varwidth = TRUE, dodge.width=0.4,aes(color=CorrPvalue<0.05))+
+  geom_bar(stat="identity")+
+  geom_errorbar( aes(x=reorder(frag1, meanboost), ymin=meanboost-sqrt(variance), ymax=meanboost+sqrt(variance), colour=CorrPvalue<0.05), width=0.4, alpha=0.9, size=1.3)+
+  theme_bw(base_size = 15)+
+  labs(caption = "55 enhancers (Promoters>5)")+
+  coord_flip()
+```
+
+
+# Single enhancer Plots
+
+```{r Barplots_examplesErrorBArs_All , fig.height=6, fig.width=18}
+
+
+ palBars <- c('navyblue', 'gray95', 'orangered')
+      y_minboostTFCP <- min(tib_Split_EEP_All_normDual%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%.[['boost']], na.rm = TRUE)
+      y_maxboostTFCP <- max(tib_Split_EEP_All_normDual%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%.[['boost']], na.rm = TRUE)
+
+
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(frag%in%c("Sox2_E180","Sox2_E183", "Nanog_E073", "Nanog_E074" ))%>%
+  group_by(Promoter, frag)%>%
+  summarise(sdboost=var(boost), boost=median(boost))%>%
+ggplot(aes(Promoter, boost, fill=boost))+
+geom_bar(stat="identity")+
+  geom_errorbar(aes(ymin=boost-sdboost, ymax=boost+sdboost), width=.2,
+                 position=position_dodge(.9))+
+    theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  xlab("Promoter")+
+  ylab("Boost index (log2)")+
+  scale_fill_gradientn(colors = palBars, values = rescale(c(-3.36, 0, 6.08)), limits = c(-3.36,6.08) ) +
+  #scale_fill_gradient2( low = 'navyblue',mid = "white",high = 'orangered',midpoint = 0)+
+  facet_grid(~frag)+
+  ggtitle("E+C Sox2_E180")
+
+
+
+```
+
+```{r Barplots_examplesErrorBArs_Sox2E180 , fig.height=6, fig.width=9}
+
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(frag=="Sox2_E180")%>%
+   ggplot(aes(Promoter, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.05)+
+  geom_boxplot(alpha=0.7, outlier.shape = NA)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+C Sox2_E180")
+  #facet_wrap(~Promoter)
+
+ palBars <- c('navyblue', 'gray95', 'orangered')
+      y_minboostTFCP <- min(tib_Split_EEP_All_normDual%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%.[['boost']], na.rm = TRUE)
+      y_maxboostTFCP <- max(tib_Split_EEP_All_normDual%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%.[['boost']], na.rm = TRUE)
+
+
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(frag%in%"Sox2_E180")%>%
+  group_by(Promoter, frag)%>%
+  summarise(sdboost=var(boost), boost=median(boost))%>%
+ggplot(aes(Promoter, boost, fill=boost))+
+geom_bar(stat="identity")+
+  geom_errorbar(aes(ymin=boost-sdboost, ymax=boost+sdboost), width=.2,
+                 position=position_dodge(.9))+
+    theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  xlab("Promoter")+
+  ylab("Boost index (log2)")+
+  scale_fill_gradientn(colors = palBars, values = rescale(c(-3.36, 0, 6.08)), limits = c(-3.36,6.08) ) +
+  #scale_fill_gradient2( low = 'navyblue',mid = "white",high = 'orangered',midpoint = 0)+
+  facet_grid(~frag)+
+  ggtitle("E+C Sox2_E180")
+
+
+
+```
+
+
+```{r Barplots_examplesErrorBArs_Sox2E183 , fig.height=6, fig.width=9}
+
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(frag=="Sox2_E183")%>%
+   ggplot(aes(Promoter, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.05)+
+  geom_boxplot(alpha=0.7, outlier.shape = NA)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+C Sox2_E183")
+  #facet_wrap(~Promoter)
+
+
+
+
+```
+
+```{r Barplots_examplesErrorBArs_NanogE073 , fig.height=6, fig.width=9}
+
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(frag=="Nanog_E073")%>%
+   ggplot(aes(Promoter, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.05)+
+  geom_boxplot(alpha=0.7, outlier.shape = NA)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+C Nanog_E073")
+  #facet_wrap(~Promoter)
+
+
+
+
+```
+
+```{r Barplots_examplesErrorBArs_NanogE074 , fig.height=6, fig.width=9}
+
+tib_Split_EEP_All_normDual%>% 
+   mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Singlets")%>%
+         filter(!boost%in%c(NA,NaN,Inf,-Inf))%>%
+  filter(frag=="Nanog_E074")%>%
+   ggplot(aes(Promoter, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.05)+
+  geom_boxplot(alpha=0.7, outlier.shape = NA)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+C Nanog_E074")
+  #facet_wrap(~Promoter)
+
+
+
+
+```

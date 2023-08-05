@@ -1,0 +1,339 @@
+---
+title: "Figure2_SingleEnhancers_MMA20230805"
+author: "MMA"
+date: '2023-08-05'
+output: html_document
+---
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+---
+# Intro
+In this document we analyze the effects of single enhacers across enhancer-control combinations and generate publication grade plots for Figure 2 of Martinez-Ara et al. 2023.
+
+# Funcs
+
+```{r ploot matrix function, include=FALSE}
+
+#Function to plot the Boosting index Matrix 
+plot_coop_heatmap_EEP <- function(tib, classs = 'all' , skip_n_lab = 1){
+
+  if(classs != 'all') {
+    # note: tib %>% filter(class == get('class')) fails
+    # see https://stackoverflow.com/questions/40169949/filter-dataframe-using-global-variable-with-the-same-name-as-column-name
+
+    tib     <- tib %>% filter(class %in% class)
+  }
+  # set color palette
+  pal <- c('navyblue', 'gray95', 'orangered')
+
+  # static viz
+  print("1")
+
+      # compute coop index range
+      y_min <- min(tib[['boost']], na.rm = TRUE)
+      y_max <- max(tib[['boost']], na.rm = TRUE)
+
+      # coop index heatmap (additive)
+      p_main <- tib %>%
+        ggplot(aes(x = id1, y = id2)) +
+        geom_tile(fill = 'gray40') +
+        #        geom_tile(color = 'gray20', alpha = 0, size = 0.5) + ## prev version with stroke
+        #        geom_tile(fill = rgb(53/255, 143/255, 168/255, 0.1)) + ## prev version with color outside coop idx palette
+        geom_raster(data = tib, aes(x = id1, y = id2, fill = boost))
+    print("2")
+    # cosmetics
+    p_main <- p_main +
+      scale_fill_gradientn(colors = pal,
+                           values = scales::rescale(c(y_min, 0, y_max))) +
+      labs(x = 'Fragment 1', y = 'Fragment 2', fill = 'Boost Index', caption = paste0('(n = ', nrow(tib), ' pairs)')) +
+      theme(axis.text.x      = element_text(angle = 90, color =  c('black', rep('transparent', skip_n_lab))),
+            axis.text.y      = element_text(color =  c('black', rep('transparent', 0))),
+            panel.grid       = element_blank(),
+            panel.background = element_rect(fill = "white"),
+            legend.position  = 'bottom',
+            text             = element_text(size = 13),)+
+      ggtitle((tib$Promoter)[[1]])
+
+    print("3")
+
+  p_main
+
+
+
+}
+```
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+
+
+# Aim
+
+Here I want to quantify the nr of significantly active enhancers there is per promoter and across promoters. 
+
+
+# Analysis
+
+## per promoter
+
+```{r fig.height=3, fig.width=3.5}
+#prepare data
+tib_Split_EEP_All_normDual_wilcox <- tib_Split_EEP_All_normDual%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))
+tib_Split_EEP_All_normDual_wilcox%>%
+filter(frag=="Controls")
+
+## For loop for wilcoxon test
+WilcoxTestEnhancersPerP<-tibble(frag=NA, Promoter=NA, pvalue=NA, statistic=NA, n=NA , MedBoost=NA)
+
+
+for (j in unique(tib_Split_EEP_All_normDual_wilcox$Promoter)){
+for (i in unique(tib_Split_EEP_All_normDual_wilcox$frag)) {
+  wicoxFtestE<-tib_Split_EEP_All_normDual_wilcox%>%
+    ungroup()%>%
+        filter(Type=="Singlets")%>%
+    filter(frag==i)%>%
+    filter(Promoter==j)%>%
+    select(boost)
+  wicoxFtestrest<-tib_Split_EEP_All_normDual_wilcox%>%
+    ungroup()%>%
+    filter(Type=="Controls")%>%
+    filter(Promoter==j)%>%
+    select(boost)
+  if (nrow(wicoxFtestE)>5){
+  WilcoxTestResult<-wilcox.test(wicoxFtestrest$boost,wicoxFtestE$boost)
+  
+  WilcoxTestEnhancersPerP<-WilcoxTestEnhancersPerP%>%
+    add_row(frag=i,Promoter=j, pvalue=WilcoxTestResult$p.value, statistic=WilcoxTestResult$statistic,
+            n=nrow(wicoxFtestE), MedBoost=median(wicoxFtestE$boost))
+    }
+  }
+}
+  
+```
+
+
+```{r}
+WilcoxTestEnhancersPerP<-WilcoxTestEnhancersPerP%>%
+  mutate(pAdj=p.adjust(pvalue))
+```
+
+
+```{r SignificantSingleEs_per_promoter}
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(MedBoost))%>%
+  ggplot(aes(Promoter, MedBoost, fill=pAdj<(0.01)))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.1)+
+  theme_bw()
+```
+
+
+## Across promoters
+
+
+```{r}
+WilcoxTestEnhancersAcrossP<-tibble(frag=NA, pvalue=NA, statistic=NA, n=NA , MedBoost=NA)
+
+
+
+for (i in unique(tib_Split_EEP_All_normDual_wilcox$frag)) {
+  wicoxFtestE<-tib_Split_EEP_All_normDual_wilcox%>%
+    ungroup()%>%
+        filter(Type=="Singlets")%>%
+    filter(frag==i)%>%
+    select(boost)
+  wicoxFtestrest<-tib_Split_EEP_All_normDual_wilcox%>%
+    ungroup()%>%
+    filter(Type=="Controls")%>%
+    select(boost)
+  if (nrow(wicoxFtestE)>5){
+  WilcoxTestResult<-wilcox.test(wicoxFtestrest$boost,wicoxFtestE$boost)
+  
+  WilcoxTestEnhancersAcrossP<-WilcoxTestEnhancersAcrossP%>%
+    add_row(frag=i, pvalue=WilcoxTestResult$p.value, statistic=WilcoxTestResult$statistic,
+            n=nrow(wicoxFtestE), MedBoost=median(wicoxFtestE$boost))
+    }
+  }
+
+```
+
+```{r}
+WilcoxTestEnhancersAcrossP<-WilcoxTestEnhancersAcrossP%>%
+  mutate(pAdj=p.adjust(pvalue))
+```
+
+
+```{r SignificantSingleEs_across_promoters}
+WilcoxTestEnhancersAcrossP%>%
+  mutate(Promoter="All_Promoters")%>%
+  ggplot(aes(Promoter, MedBoost, fill=pAdj<(0.01)))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.1)+
+  theme_bw()
+```
+
+## Plot
+```{r eval=FALSE, fig.height=10, fig.width=10, include=FALSE}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_wilcox%>%
+  filter(!Type=="Duplets")%>%
+  ggplot(aes(frag, boost))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.0055)+
+  theme_bw()+
+  facet_wrap(~Promoter)
+  
+```
+
+```{r SignificantSingleEs_Sox2 , fig.width=9, fig.height=4}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_wilcox%>%
+  filter(!Type=="Duplets")%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  left_join(WilcoxTestEnhancersPerP, by = c("Promoter", "frag"))%>%
+  mutate(n=ifelse(n%in%c(NA) & Type=="Controls", 100, n))%>%
+  filter(!is.na(n))%>%
+  ggplot(aes(frag, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.025)+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.025, aes( color=pAdj<0.01))+
+  stat_summary(fun.y = median, width = 0.6, linetype = "solid", geom = "crossbar")+
+  #geom_boxplot(alpha=0.7, aes( fill=pAdj<0.01), outlier.shape = NA)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+C activation Sox2 promoter")
+  #facet_wrap(~Promoter)
+  
+```
+
+
+# mini matrix
+```{r mini_matrix, fig.width=15, fig.height=8}
+tib_Split_EEP_All_normDual%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+filter(!Type=="Duplets")%>%
+  filter(!boost%in% c(NA, Inf, -Inf))%>%
+  group_by(Promoter, frag)%>%
+  summarise(boost=median(boost), N=n())%>%
+  filter(N>10)%>%
+    mutate(id1=frag, id2=Promoter)%>%
+  #filter(log2(activity_all_frag2)!=c(NA, Inf,-Inf))%>%
+  #filter(log2(activity_all_frag1)!=c(NA, Inf,-Inf))%>%
+plot_coop_heatmap_EEP( class = c('all'), skip_n_lab = 0)
+```
+
+
+# quantify Es with generally activating effects
+
+```{r}
+WilcoxTestEnhancersAcrossP%>%
+  filter(!is.na(pvalue))%>%
+  mutate(activator=ifelse(pAdj<0.01 & MedBoost>0.01,1,0))%>%
+  summarise(n=n(), nAct=sum(activator) , PercAct=sum(activator)/n)
+
+WilcoxTestEnhancersAcrossP%>%
+  filter(pAdj>0.01)
+  
+```
+
+```{r}
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(pvalue))%>%
+  mutate(activator=ifelse(pAdj<0.01 & MedBoost>0.01,1,0))%>%
+  group_by(frag)%>%
+  summarise(n=n(), nAct=sum(activator) , PercAct=sum(activator)/n, medboost=mean(MedBoost))
+  
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(pvalue))%>%
+  mutate(activator=ifelse(pAdj<0.01 & MedBoost>0.01,1,0))%>%
+  group_by(frag)%>%
+  summarise(n=n(), nAct=sum(activator) , PercAct=sum(activator)/n)%>%
+  mutate(Act=ifelse(nAct>0,1,0))%>%
+  summarise(Ntot=n(), nActaccP=sum(Act))
+
+```
+
+
+# Example effects across promoters
+
+
+```{r Nanog_E074_example, fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Singlets")%>%
+  #filter(Promoter=="P7_Ap1m1")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  left_join(WilcoxTestEnhancersPerP, by = c("Promoter", "frag"))%>%
+  #mutate(n=ifelse(n%in%c(NA) & Type=="Controls", 100, n))%>%
+  #filter(!is.na(n))%>%
+  filter(frag=="Nanog_E074")%>%
+  ggplot(aes(Promoter, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.04)+
+stat_summary(fun.y = median, width = 0.6, linetype = "solid", geom = "crossbar")+
+  theme_bw(base_size = 12)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+C activation Nanog_E073  per promoter")
+  #facet_wrap(~Promoter)
+  
+```
+
+

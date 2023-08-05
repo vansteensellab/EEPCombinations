@@ -1,0 +1,173 @@
+---
+title: "Figure5_Promoter_responsiveness_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+--- 
+
+# Intro
+
+Here we quantify promoter responsiveness relative to the average boost index across the 8 promoters. 
+These plots are included in Figure 5.
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+## PrepData
+
+```{r}
+tib_Split_EEP_All_normDual_model<-tib_Split_EEP_All_normDual%>%
+  filter(!activity_all%in%c(NaN, Inf, -Inf, 0))%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  mutate(linboost=activity_all/Baseline)
+```
+
+# Calculate average enhancer effects
+
+```{r}
+#transform to wider dataset
+PairsObjectCorr <-tib_Split_EEP_All_normDual %>%
+    filter(!activity_all%in%c(NaN, Inf, -Inf, 0))%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  filter(Type=="Duplets")%>%
+  select(id, Promoter, boost)%>%
+  pivot_wider(names_from = Promoter, values_from = boost)
+```
+
+
+```{r}
+#calculate avg effects
+AvgEffects<-PairsObjectCorr%>%
+                drop_na()%>%
+mutate(AvgEff=(P7_Ap1m1+P3_OTX2+P2_KLF2+P6_Nanog+P1_SOX2+P4_FGF5+P8_Tbx3+P5_Lefty1)/8)%>%
+  select(id, AvgEff)
+```
+
+```{r}
+# join datasets
+
+tib_Split_EEP_All_normDual_PlusEffectsAvg<-tib_Split_EEP_All_normDual_model%>%
+  #filter(!Promoter=="P7_Ap1m1")%>%
+  filter(Type=="Duplets")%>%
+  left_join(AvgEffects, by="id")%>%
+  filter(!boost%in%c(NA, Inf, -Inf, NaN))%>%
+  filter(!AvgEff%in%c(NA, Inf, -Inf, NaN))
+  
+```
+
+```{r CorrMatixBoostAvgEff, fig.height=8, fig.width=8}
+# plot avg effect vs effect per promoter
+
+tib_Split_EEP_All_normDual_PlusEffectsAvg%>%
+   ggplot(aes(AvgEff, boost))+
+  geom_point(alpha=0.25, size=0.4)+
+  coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor(
+  label.y = -1.5)+
+  facet_wrap(~Promoter)
+
+
+```
+
+# extract slopes
+
+```{r}
+
+# fit model to extract promoter specific slopes
+
+
+fit1_AvgEff <- lm(boost ~ AvgEff + AvgEff:Promoter, data=tib_Split_EEP_All_normDual_PlusEffectsAvg)
+summary(fit1_AvgEff)
+  
+```
+
+```{r Slopes_AVGeff, fig.width=5, fig.height=5}
+# plot slopes vs baselines 
+
+#extract baselines
+Baselines<-tib_Split_EEP_All_normDual%>%
+  #filter(Promoter=="P2_KLF2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+ #mutate(Supradd=ifelse(activity_all> (Additivebaseline+AdditiveSd) ,1, 0))%>%
+  group_by(Promoter, Baseline)%>%
+  summarise(N=n())
+
+#extract slopes
+            fit1_AvgEff$coefficients
+ SlopesAvgEff<- c(1.384816, 1.384816-0.-0.7481973, 1.384816-0.7431084, 1.384816-0.01250254, 1.384816+0.1529832, 1.384816-0.6691256, 1.384816-1.067628, 1.384816+0.009052963 )    
+ 
+ #plot
+bind_cols(Baselines, slope=SlopesAvgEff)%>%
+ ggplot(aes( log2(Baseline), slope))+
+  geom_point(size=1.5, alpha=0.1)+
+    #coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm", alpha=0.5)+
+  #geom_abline(slope = 1)+
+  stat_cor()+
+    geom_point(aes(color=Promoter), size=3)
+  
+```
+

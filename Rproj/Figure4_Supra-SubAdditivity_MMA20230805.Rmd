@@ -1,0 +1,346 @@
+---
+title: "Figure4_Supra-SubAdditivity_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+--- 
+
+# Intro
+
+Here we analyse the supra and sub-additive interactions of enhancer-enhancer combinations and generate plots for Figure 4.
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+# synergies Analysis
+
+## per promoter
+
+```{r fig.height=3, fig.width=3.5}
+#prepare data
+tib_Split_EEP_All_normDual_wilcox <- tib_Split_EEP_All_normDual%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))
+tib_Split_EEP_All_normDual_wilcox%>%
+   mutate(Baseline= ifelse(Promoter=="P4_FGF5", Baseline-0.07, Baseline))%>%
+  mutate(Additivebaseline=Baseline1+Baseline2-Baseline)%>%
+  mutate(AdditiveCoop==log2(activity_all/Additivebaseline))%>%
+filter(frag=="Controls")
+
+## For loop for wilcoxon test
+WilcoxTestEnhancersPerP<-tibble(frag=NA, Promoter=NA, pvalue=NA, statistic=NA, n=NA , MedBoost=NA)
+
+
+for (j in unique(tib_Split_EEP_All_normDual_wilcox$Promoter)){
+for (i in unique(tib_Split_EEP_All_normDual_wilcox$frag1)) {
+  wicoxFtestE<-tib_Split_EEP_All_normDual_wilcox%>%
+    filter(!AdditiveCoop%in% c(NA, Inf, -Inf))%>%
+    ungroup()%>%
+        filter(Type=="Duplets")%>%
+    filter(frag1==i | frag2==i)%>%
+    filter(Promoter==j)%>%
+    select(AdditiveCoop)
+  wicoxFtestrest<-tib_Split_EEP_All_normDual_wilcox%>%
+    ungroup()%>%
+    filter(Type=="Duplets")%>%
+    #in this case I compare to the rest of the duplets, not to controls
+        filter(!frag==i & !frag2==i)%>%
+    filter(Promoter==j)%>%
+    select(AdditiveCoop)
+  if (nrow(wicoxFtestE)>5){
+  WilcoxTestResult<-wilcox.test(wicoxFtestrest$AdditiveCoop,wicoxFtestE$AdditiveCoop)
+  
+  WilcoxTestEnhancersPerP<-WilcoxTestEnhancersPerP%>%
+    add_row(frag=i,Promoter=j, pvalue=WilcoxTestResult$p.value, statistic=WilcoxTestResult$statistic,
+            n=nrow(wicoxFtestE), MedBoost=median(wicoxFtestE$AdditiveCoop))
+    }
+  }
+}
+  
+```
+
+
+```{r}
+WilcoxTestEnhancersPerP<-WilcoxTestEnhancersPerP%>%
+  mutate(pAdj=p.adjust(pvalue))
+```
+
+
+```{r SignificantSynergies_per_promoter}
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(MedBoost))%>%
+  ggplot(aes(Promoter, MedBoost))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.02)+
+  theme_bw()+
+  ylab("Obs/Exp")+
+  ggtitle("General synergies per Enhancer and Promoter")
+
+```
+# Supra/Sub-additivity per promoter
+
+Here we quantify how many combinations deviate more than 1 propagated standard deviation from the additive estimation.
+
+```{r fig.height=3, fig.width=3.5}
+#prepare data
+tib_Split_EEP_All_normDual_PropSd <- tib_Split_EEP_All_normDual%>%
+  filter(!is.na(Additivebaseline))%>%
+  #propagateSDs square root of sum of squares of individual sds
+  mutate(MulltipBAseline=Baseline1*Baseline2/Baseline)%>%
+  mutate(AdditiveSd=sqrt((StDevBaseline^2)+(StDevBaseline1^2)+(StDevBaseline2^2)))%>%
+   mutate(MultSd=MulltipBAseline*sqrt(((StDevBaseline/Baseline)^2)+((StDevBaseline1/Baseline1)^2)+((StDevBaseline2/Baseline2)^2)))%>%
+  #is measured activity within Additive estimate +-1sd
+  #filter((Additivebaseline-AdditiveSd)>0)
+  mutate(SignifAddDev=ifelse(activity_all> (Additivebaseline-AdditiveSd) & activity_all< (Additivebaseline+AdditiveSd),"No", "Yes"))%>%
+  mutate(SignifAddDev2sd=ifelse(activity_all> (Additivebaseline-2*AdditiveSd) & activity_all< (Additivebaseline+2*AdditiveSd),"No", "Yes"))%>%
+mutate(SignifMultDev=ifelse(activity_all> (MulltipBAseline-MultSd) & activity_all< (MulltipBAseline+MultSd),"No", "Yes"))%>%
+  mutate(SignifMultDev2sd=ifelse(activity_all> (MulltipBAseline-2*MultSd) & activity_all< (MulltipBAseline+2*MultSd),"No", "Yes"))%>%
+  mutate(SupraddNotMult=ifelse(activity_all> (Additivebaseline+AdditiveSd) & activity_all< (MulltipBAseline),"Yes", "No"))%>%
+mutate(SupraddMult=ifelse(abs(log2(MulltipBAseline/Additivebaseline))> 0.5 & activity_all> (MulltipBAseline),"Yes", "No"))%>%
+mutate(ClosertoMult=ifelse(abs(log2(MulltipBAseline/Additivebaseline))> 0.5 & abs(activity_add-Additivebaseline)>abs(activity_all-MulltipBAseline),"Yes", "No"))
+
+```
+
+```{r 1SDAwayDist, fig.width=8, fig.height=4}
+# plot distributions per fragment per promoter
+
+p<-tib_Split_EEP_All_normDual_PropSd%>%
+  #filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+ ggplot(aes( Promoter, AdditiveCoop))+
+  scale_color_manual(values=c("grey50", "turquoise"))+
+geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.015, alpha=0.3, aes(fill=SignifAddDev, color=SignifAddDev))+
+stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median,
+                 geom = "crossbar", width = 0.75)+
+    #coord_fixed()+
+  theme_bw()+
+  theme( # remove the vertical grid lines
+           panel.grid.major.x = element_blank() ,
+           # explicitly set the horizontal lines (or they will disappear too)
+           panel.grid.major.y = element_line( size=.1 ) 
+    )+
+ scale_y_continuous(breaks = seq(from = -4, to = 8, by = 2))
+  #geom_smooth(method = "lm")+
+  #geom_abline(slope = 1)
+  #stat_cor()
+library(ggrastr)
+
+  rasterize(p, layers='Dotplot', dpi=600)
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  filter(!Promoter=="P4_FGF5")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+ ggplot(aes( Promoter, AdditiveCoop))+
+geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.01, alpha=0.3, aes(fill=SignifAddDev, color=SignifAddDev))+
+  geom_boxplot(alpha=0.7, outlier.shape = NA)+
+    #coord_fixed()+
+  theme_bw()
+
+  #geom_smooth(method = "lm")+
+  #geom_abline(slope = 1)
+  #stat_cor()
+  
+```
+
+# Supra/Sub-additivity vs baseline
+
+Here we plot the relationships between promoter baselines and Supra/sub-additivity
+
+```{r SupraddVSBAseline, fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  #filter(Promoter=="P2_KLF2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+ mutate(Supradd=ifelse(activity_all> (Additivebaseline+AdditiveSd) ,1, 0))%>%
+  group_by(Promoter, Baseline)%>%
+  summarise(N=n(), SupraddN=sum(Supradd), PercSupradd=SupraddN/N)%>%
+ ggplot(aes( log2(Baseline), PercSupradd))+
+    #coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm", alpha=0.3)+
+    geom_point(size=1)+
+  #geom_abline(slope = 1)+
+  stat_cor()+
+    geom_point(aes(color=Promoter), size=3.5)+
+  ylim(c(-0.05, 0.55))
+  
+```
+
+```{r SubaddVSBAseline, fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  #filter(Promoter=="P2_KLF2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+ mutate(Supradd=ifelse(activity_all< (Additivebaseline-AdditiveSd) ,1, 0))%>%
+  group_by(Promoter, Baseline)%>%
+  summarise(N=n(), SupraddN=sum(Supradd), ProportionSubadd=SupraddN/N)%>%
+ ggplot(aes( log2(Baseline), ProportionSubadd))+
+    #coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm", alpha=0.3)+
+    geom_point(size=1)+
+  #geom_abline(slope = 1)+
+  stat_cor()+
+    geom_point(aes(color=Promoter), size=3.5)+
+  ylim(c(-0.05, 0.55))
+  
+```
+
+# Supra/Sub-additivity per enhancer and promoter
+
+```{r Synergies_per_enhancer, fig.width=12, fig.height=5}
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(MedBoost))%>%
+  ggplot(aes(reorder(frag, MedBoost), MedBoost, color=Promoter))+
+  geom_point(binaxis = "y", stackdir = "center", binwidth =0.02)+
+    stat_summary(fun.y = mean, width = 0.5, linetype = "solid", colour="darkgrey", geom = "crossbar")+
+  theme_bw()+
+  ylab("log2(Obs/Exp)")+
+  scale_x_discrete(guide = guide_axis(angle = 90)) +
+  #geom_segment(aes(x = frag-0.5, xend = frag+0.5, y = median(MedBoost), yend = median(MedBoost)))
+  ggtitle("General supra-additivity per Enhancer and Promoter")
+
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(MedBoost))%>%
+  filter(MedBoost>0.5)%>%
+  select(frag)%>%
+  distinct
+
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(MedBoost))%>%
+  filter(MedBoost>0.5)%>%
+  select(frag)%>%
+  group_by(frag)%>%
+  summarise(n=n())%>%
+  filter(n>1)
+
+WilcoxTestEnhancersPerP%>%
+  filter(!is.na(MedBoost))%>%
+  select(frag)%>%
+  distinct
+
+19/58
+6/58
+```
+
+# Enhancer Examples
+
+## Nodal_E160
+
+```{r Synergies_Examples, fig.width=5, fig.height=8}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_wilcox%>%
+   mutate(Baseline= ifelse(Promoter=="P4_FGF5", Baseline-0.07, Baseline))%>%
+  mutate(Additivebaseline=Baseline1+Baseline2-Baseline)%>%
+  mutate(AdditiveCoop==log2(activity_all/Additivebaseline))%>%
+  filter(Type=="Duplets")%>%
+  filter(!AdditiveCoop%in% c(NA,Inf, -Inf))%>%
+  filter(frag1=="Nodal_E160" | frag2=="Nodal_E160")%>%
+  ggplot(aes(Promoter, AdditiveCoop))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.02, aes(fill=Promoter, color=Promoter))+
+stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median,
+                 geom = "crossbar", width = 0.75)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+E Synergies Nodal_E160 per promoter")+
+  ylim(c(-2.5, 7.5))
+
+tib_Split_EEP_All_normDual_wilcox%>%
+    mutate(Baseline= ifelse(Promoter=="P4_FGF5", Baseline-0.07, Baseline))%>%
+  mutate(Additivebaseline=Baseline1+Baseline2-Baseline)%>%
+  mutate(AdditiveCoop==log2(activity_all/Additivebaseline))%>%
+  filter(Type=="Duplets")%>%
+  filter(!AdditiveCoop%in% c(NA,Inf, -Inf))%>%
+  filter(frag1=="Sox2_E180" | frag2=="Sox2_E180")%>%
+  ggplot(aes(Promoter, AdditiveCoop))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.02, aes(fill=Promoter, color=Promoter))+
+stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median,
+                 geom = "crossbar", width = 0.75)+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  ggtitle("E+E Synergies Sox2_E180 per promoter")+
+  ylim(c(-2.5, 7.5))
+  #facet_wrap(~Promoter)
+
+
+  
+```
+
+
+# Synergies between clusters
+
+
+```{r Within_between, fig.width=4, fig.height=4}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_wilcox%>%
+  filter(Type=="Duplets")%>%
+  mutate(Clust=ifelse(cluster=="Rest", "Between", "Within"))%>%
+  filter(!AdditiveCoop%in% c(NA,Inf, -Inf))%>%
+  ggplot(aes(Clust, AdditiveCoop))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.01)+
+stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median,
+                 geom = "crossbar", width = 0.3, color="grey")+
+  theme_bw(base_size = 10)+
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  stat_compare_means(method="wilcox.test")+
+  ggtitle("E+E Synergies within/between Clusters")
+
+  
+```

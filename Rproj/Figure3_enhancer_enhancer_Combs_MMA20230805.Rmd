@@ -1,0 +1,352 @@
+---
+title: "Figure3_enhancer_enhancer_Combs_MMA20230805"
+author: "MMA"
+date: "2023-08-05"
+output: html_document
+---
+
+```{r knitr setup, message=FALSE, warning=FALSE,include=FALSE}
+knitr::opts_chunk$set(
+                      fig.path = "/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/Rproj/",
+                      fig.align = 'center', 
+                      fig.width = 5, 
+                      fig.height = 5,
+                      fig.pos = "H",
+                      message = FALSE,
+                      warning = FALSE,
+                      dev = c("pdf"),
+                      dpi = 500,
+                      include = TRUE)
+
+
+```
+
+```{r libs and fun, include = FALSE, tidy = FALSE}
+library(tidyverse)
+library(here)
+library(magrittr)
+library(reshape2)
+library(knitr)
+library(gridExtra)
+library(pander)
+library(cowplot)
+library(circlize)
+library(datteRo)
+library(ggplot2)
+library(GGally)
+library(scales)
+library(heatmaply)
+library(ggpubr)
+library(ggrastr)
+```
+
+--- 
+
+# Intro
+
+Here we analyse the effects of enhancer-enhancer combinations and generate plots for Figure 3.
+
+# Load data
+
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
+```
+
+## merge all libs
+
+```{r}
+
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+
+
+# Funcs
+
+```{r ploot matrix function, include=FALSE}
+
+#Function to plot the Boosting index Matrix 
+plot_coop_heatmap_EEP <- function(tib, classs = 'all' , skip_n_lab = 1){
+
+  if(classs != 'all') {
+    # note: tib %>% filter(class == get('class')) fails
+    # see https://stackoverflow.com/questions/40169949/filter-dataframe-using-global-variable-with-the-same-name-as-column-name
+
+    tib     <- tib %>% filter(class %in% class)
+  }
+  # set color palette
+  pal <- c('navyblue', 'gray95', 'orangered')
+
+  # static viz
+  print("1")
+
+      # compute coop index range
+      y_min <- min(tib[['boost']], na.rm = TRUE)
+      y_max <- max(tib[['boost']], na.rm = TRUE)
+
+      # coop index heatmap (additive)
+      p_main <- tib %>%
+        ggplot(aes(x = id1, y = id2)) +
+        geom_tile(fill = 'gray40') +
+        #        geom_tile(color = 'gray20', alpha = 0, size = 0.5) + ## prev version with stroke
+        #        geom_tile(fill = rgb(53/255, 143/255, 168/255, 0.1)) + ## prev version with color outside coop idx palette
+        geom_raster(data = tib, aes(x = id1, y = id2, fill = boost))
+    print("2")
+    # cosmetics
+    p_main <- p_main +
+      scale_fill_gradientn(colors = pal,
+                           values = scales::rescale(c(y_min, 0, y_max))) +
+      labs(x = 'Fragment 1', y = 'Fragment 2', fill = 'Boost Index', caption = paste0('(n = ', nrow(tib), ' pairs)')) +
+      theme(axis.text.x      = element_text(angle = 90, color =  c('black', rep('transparent', skip_n_lab))),
+            axis.text.y      = element_text(color =  c('black', rep('transparent', 1))),
+            panel.grid       = element_blank(),
+            panel.background = element_rect(fill = "white"),
+            legend.position  = 'bottom',
+            text             = element_text(size = 13),)+
+      ggtitle((tib$Promoter)[[1]])
+
+    print("3")
+
+  p_main
+
+
+
+}
+```
+
+# Boost matrix Lefty1
+
+```{r BoostMatrix_lefty1, fig.height=15, fig.width=15}
+tib_Split_EEP_Lefty1_normDual%>%
+  mutate(id1=frag1)%>%
+  mutate(id2=frag2)%>%
+  mutate(id1=ifelse(grepl( "Random",id1), paste0("E", id1), id1))%>%
+  mutate(id2=ifelse(grepl( "Random",id2), paste0("E", id2), id2))%>%
+  group_by(id1, id2)%>%
+  summarise(boost=mean(boost))%>%
+  filter(!boost%in%c(NA, NaN, Inf, -Inf))%>%
+  plot_coop_heatmap_EEP()
+```
+
+# compare activation per comb type
+
+```{r Comb_vs_Single_vs_Controls, fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+filter(!boost%in% c(NA,Inf, -Inf))%>%
+  group_by(Type)%>%
+  summarise(n())
+tib_Split_EEP_All_normDual%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, "Duplets"
+        ))))%>%
+  #filter(Type=="Singlets")%>%
+  #filter(Promoter=="P7_Ap1m1")%>%
+  filter(!boost%in% c(NA,Inf, -Inf))%>%
+  #left_join(WilcoxTestEnhancersPerP, by = c("Promoter", "frag"))%>%
+  #mutate(n=ifelse(n%in%c(NA) & Type=="Controls", 100, n))%>%
+  #filter(!is.na(n))%>%
+  #filter(frag=="Lefty1_E094")%>%
+  ggplot(aes(Type, boost))+
+   #ggbeeswarm::geom_beeswarm(priority='density',size=0.5)
+  ggrastr::rasterise(geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.01, alpha=0.5), dpi=600)+
+  stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median,
+                 geom = "crossbar", width = 0.5, color="Grey")+
+  theme_bw(base_size = 12)+
+  scale_x_discrete(limits = c("Controls", "Singlets", "Duplets"),guide = guide_axis(angle= 45)) +
+  ggtitle("Combinations boost distributrions")+
+  #facet_wrap(~Promoter)+
+  stat_compare_means(comparisons = (list( c("Controls", "Duplets"), c("Controls", "Singlets"), c("Duplets", "Singlets") )), method = "wilcox.test")+
+  labs(caption = "C+C=2508 ; E+C=38085, E+E=69096") 
+  
+```
+
+
+
+# Single enhancers vs enhancer-enahncer combinations
+
+```{r SingleEvsDoubleE_Sox2_Lefty1, fig.width=8, fig.height=4}
+#library(tidyquant) 
+tib_Split_EEP_All_normDual%>%
+  mutate(SingBoostH=ifelse(Boost1>Boost2, Boost1, Boost2))%>%
+  filter(boost>0.05)%>%
+    filter(Promoter%in%c("P1_SOX2", "P5_Lefty1"))%>%
+    ggplot(aes( SingBoostH, boost))+
+  geom_bin_2d(binwidth=c(0.1,0.1))+
+  theme_bw()+
+  geom_smooth()+
+  geom_hline(yintercept = 0, color="grey")+
+   geom_abline(slope = 1, color="grey")+
+  coord_fixed()+
+  stat_cor(,
+  label.x = 0,
+  label.y = -2)+
+  facet_wrap(~Promoter)
+  #geom_ma(ma_fun = SMA, n = 300, wilder = TRUE, color = "red")
+
+
+```
+
+# Calculate additivity and multiplicativity 
+
+```{r fig.height=3, fig.width=3.5}
+#prepare data
+tib_Split_EEP_All_normDual_PropSd <- tib_Split_EEP_All_normDual%>%
+  filter(!is.na(Additivebaseline))%>%
+  #propagateSDs square root of sum of squares of individual sds
+  mutate(MulltipBAseline=Baseline1*Baseline2/Baseline)%>%
+  mutate(AdditiveSd=sqrt((StDevBaseline^2)+(StDevBaseline1^2)+(StDevBaseline2^2)))%>%
+   mutate(MultSd=MulltipBAseline*sqrt(((StDevBaseline/Baseline)^2)+((StDevBaseline1/Baseline1)^2)+((StDevBaseline2/Baseline2)^2)))%>%
+  #is measured activity within Additive estimate +-1sd
+  #filter((Additivebaseline-AdditiveSd)>0)
+  mutate(SignifAddDev=ifelse(activity_all> (Additivebaseline-AdditiveSd) & activity_all< (Additivebaseline+AdditiveSd),"No", "Yes"))%>%
+  mutate(SignifAddDev2sd=ifelse(activity_all> (Additivebaseline-2*AdditiveSd) & activity_all< (Additivebaseline+2*AdditiveSd),"No", "Yes"))%>%
+mutate(SignifMultDev=ifelse(activity_all> (MulltipBAseline-MultSd) & activity_all< (MulltipBAseline+MultSd),"No", "Yes"))%>%
+  mutate(SignifMultDev2sd=ifelse(activity_all> (MulltipBAseline-2*MultSd) & activity_all< (MulltipBAseline+2*MultSd),"No", "Yes"))%>%
+  mutate(SupraddNotMult=ifelse(activity_all> (Additivebaseline+AdditiveSd) & activity_all< (MulltipBAseline),"Yes", "No"))%>%
+mutate(SupraddMult=ifelse(abs(log2(MulltipBAseline/Additivebaseline))> 0.5 & activity_all> (MulltipBAseline),"Yes", "No"))%>%
+mutate(ClosertoMult=ifelse(abs(log2(MulltipBAseline/Additivebaseline))> 0.5 & abs(activity_add-Additivebaseline)>abs(activity_all-MulltipBAseline),"Yes", "No"))
+
+```
+
+```{r , fig.width=5, fig.height=5}
+
+# Test how many elements are closer to multiplicative than to additive values
+tib_Split_EEP_All_normDual_PropSd%>%
+  mutate(Addlogdiff=log2(activity_all/Additivebaseline))%>%
+    mutate(Multlogdiff=log2(activity_all/MulltipBAseline))%>%
+  ggplot(aes(Addlogdiff, Multlogdiff))+
+  geom_point(alpha=0.3, size=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1)+
+  stat_cor()
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  mutate(Addlogdiff=log2(activity_all/Additivebaseline))%>%
+    mutate(Multlogdiff=log2(activity_all/MulltipBAseline))%>%
+  ggplot(aes(abs(Addlogdiff), abs(Multlogdiff)))+
+  geom_point(alpha=0.3, size=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor()+
+  geom_density2d()
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  mutate(Addlogdiff=abs(log2(activity_all/Additivebaseline)))%>%
+    mutate(Multlogdiff=abs(log2(activity_all/MulltipBAseline)))%>%
+  mutate(Multcloser=ifelse(Addlogdiff> Multlogdiff & Addlogdiff> 0.5,"Yes", "No"))%>%
+   group_by(Multcloser)%>%
+  summarise(n())
+
+8576/(60343+3809)
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  mutate(Addlogdiff=abs(log2(activity_all/Additivebaseline)))%>%
+    mutate(Multlogdiff=abs(log2(activity_all/MulltipBAseline)))%>%
+  mutate(Multcloser=ifelse(Addlogdiff> Multlogdiff & abs(log2(MulltipBAseline/Additivebaseline))> 0.5,"Yes", "No"))%>%
+   group_by(Multcloser)%>%
+  summarise(n())
+
+  5293/(58859+5293)
+  
+```
+
+
+
+# Sox2 additivity example Sox2_E180, Sox2_E182
+
+```{r Sox2ExampleAdd, fig.width=4, fig.height=6}
+
+tib_Split_EEP_All_normDual_PropSd%>%
+    filter(Promoter=="P1_SOX2")%>%
+  filter((frag1 %in%c("Sox2_E180") & frag2 %in%c("Sox2_E182")))
+
+
+tib_Split_EEP_All_normDual%>%  
+  filter(Promoter=="P1_SOX2")%>%
+  mutate(Type=ifelse(suffix1=="Controls" & suffix2=="Controls", "Controls", ifelse(
+    suffix1=="Controls" & !suffix2=="Controls", "Singlets", ifelse(
+    !suffix1=="Controls" & suffix2=="Controls", "Singlets", "Duplets" ))))%>%
+      mutate(frag=ifelse(Type=="Controls", "Controls", ifelse(
+        Type=="Singlets" & suffix2=="Controls", frag1, ifelse( 
+          Type=="Singlets" & suffix1=="Controls" , frag2, paste0(frag1,"_",frag2)
+        ))))%>%
+  filter(frag %in% c( "Controls", "Sox2_E180", "Sox2_E182") | (frag1 %in%c("Sox2_E180") & frag2 %in%c("Sox2_E182")) )%>%
+  filter(!frag1=="Sox2_E182")%>%
+  filter(!frag2=="Sox2_E180")%>%
+  ggplot(aes(frag, log2(activity_all)))+
+  geom_dotplot(binaxis = "y", stackdir = "center", binwidth =0.05, alpha=0.7)+
+  geom_boxplot(alpha=0.7)+
+  geom_hline(yintercept=log2(3.969942))+
+geom_hline(yintercept=log2(3.969942-0.8627558), color="red", alpha=0.5)+
+geom_hline(yintercept=log2(3.969942+0.8627558), color="red", alpha=0.5)+
+  scale_x_discrete(limits = c("Controls", "Sox2_E180", "Sox2_E182", "Sox2_E180_Sox2_E182"))+
+  theme_bw()
+```
+
+
+# plot additivity and multiplicativity Sox2
+```{r Sox2AddCorr, fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( log2(activity_all), log2(Additivebaseline)))+
+  geom_point(alpha=0.5, size=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor()+
+  #facet_wrap(~Promoter)
+  ggtitle("Sox2 Promoter E+E Additivity")+
+    labs(caption = "E+E=6681") +
+      stat_cor(
+   aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+  label.x = -5,
+  label.y = 2
+)
+```
+
+```{r Sox2MultCorr, fig.width=5, fig.height=5}
+# plot distributions per fragment per promoter
+
+tib_Split_EEP_All_normDual_PropSd%>%
+  filter(Promoter=="P1_SOX2")%>%
+  filter(!Additivebaseline%in%c(NA, Inf,-Inf))%>%
+  mutate(Addboost=log2(Additivebaseline/Baseline))%>%
+  ggplot(aes( log2(activity_all), log2(MulltipBAseline)))+
+  geom_point(alpha=0.5, size=0.5)+
+    coord_fixed()+
+  theme_bw()+
+  geom_smooth(method = "lm")+
+  geom_abline(slope = 1, color="grey")+
+  stat_cor()+
+  #facet_wrap(~Promoter)
+  ggtitle("Sox2 Promoter E*E Multiplicative")+
+    labs(caption = "E+E=6681") +
+      stat_cor(
+   aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+  label.x = -5,
+  label.y = 2
+)
+```
+
