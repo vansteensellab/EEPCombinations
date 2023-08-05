@@ -1,7 +1,7 @@
 ---
-title: "EEP_cDNA_pDNA_Preprocessing_MMA20230802"
+title: "MMA20230210_EEP_DeepSeq_cDNA_pDNA_processing"
 author: "MMA"
-date: '2023-08-03'
+date: '2023-02-10'
 output: html_document
 ---
 
@@ -1392,7 +1392,7 @@ tib_Split_EEP_Tbx3_normDual<-tib_Split_EEP_Tbx3_Boost%>%
 
 ```{r}
 save(list = c('tib_Split_EEP_Sox2_normDual','tib_Split_EEP_Klf2_normDual','tib_Split_EEP_Otx2_normDual','tib_Split_EEP_FGF5_normDual','tib_Split_EEP_Lefty1_normDual','tib_Split_EEP_Nanog_normDual','tib_Split_EEP_P14_normDual','tib_Split_EEP_Tbx3_normDual'),
-     file = '~/mydata/GitLab/epmatrix/data/MMA20230210_EEP_E143_DeepSeq_Norm.RData')
+     file = '~/mydata/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
 ```
 
 ```{r}

@@ -1,0 +1,211 @@
+---
+title: "Figure1_GvizTracks_MMA20230804"
+author: "MMA"
+date: "04/08/2023"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(
+	fig.align = "center",
+	fig.path = "~/mydata/GitLab/epmatrix/rproj/EEP_analysis/Gviz/",
+	fig.pos = "H",
+	message = FALSE,
+	warning = FALSE,
+	dev = c("pdf"),
+	dpi = 500,
+	include = TRUE
+)
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+library(GenomicRanges)
+library(Gviz)
+library(rtracklayer)
+library(biomaRt)
+library(org.Mm.eg.db)
+
+```
+
+# Intro
+This document is intended to generate publication grade genome browser tracks for the EEPcombinations paper. 
+The figures here made will be placed in Figure 1.
+
+# Load data and make plots
+```{r}
+load('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/tracks/fc180410_epsure_tadec_dhs_coord_stringent.RData')
+
+head(dhs.2i)
+# combine 2i and serum DHS
+dhs.mesc <- IRanges::reduce(c(dhs.2i[,0], dhs.serum[,0]))
+```
+
+
+```{r}
+Sox2EPs<-rtracklayer::import('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/tracks/fc180410_dat_sox2.bed', format = "BED" )
+Superehns<-rtracklayer::import('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/tracks/Superenhancers.2_Hsnisz_2013_mm10_MMA20230228.bed', format = "BED" )
+Sox2_LCR<-rtracklayer::import('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/tracks/Zuin_2022_mm10_MMA20220228.bed', format = "BED" )
+```
+
+```{r}
+atrack <- AnnotationTrack(Sox2EPs, name = "Reg Elements", stacking="squish")
+
+atrack2 <- AnnotationTrack(Superehns, name = "Super enhancers Hsnisz et al., 2013", stacking="squish")
+atrack3 <- AnnotationTrack(Sox2_LCR, name = "SCR core Zuin et al., 2022", stacking="squish")
+
+gtrack <- GenomeAxisTrack()
+
+DHSs_2i <- AnnotationTrack(dhs.2i%>%as_tibble%>%
+                             filter(seqnames=="chr3"), name = "DHSs 2i",
+                                  chromosome="chr3")
+DHSs_serum <- AnnotationTrack(dhs.serum%>%as_tibble%>%
+                             filter(seqnames=="chr3"), name = "DHSs serum",
+                                  chromosome="chr3")
+#genome : "hg19" 
+gen<-"mm10"
+#Chromosme name : "chr7"
+chr <- "chr3"
+itrack <- IdeogramTrack(genome = gen, chromosome = chr)
+
+data(geneModels)
+head(geneModels)
+plotTracks(list(gtrack, atrack))
+
+library(TxDb.Mmusculus.UCSC.mm10.knownGene) 
+customFromTxDb <- GeneRegionTrack(TxDb.Mmusculus.UCSC.mm10.knownGene,
+                                  chromosome="chr8" ) 
+
+#grtrack <- GeneRegionTrack(geneModels, genome = gen,
+#                           chromosome = chr, name = "Gene Model")
+# chr3:34,751,781-34,766,293
+plotTracks(list(itrack, gtrack, atrack,DHSs_2i,DHSs_serum, customFromTxDb), from= 34751781, to=34766293, col = NULL, collapseTranscripts="longest",
+           transcriptAnnotation = "gene")
+```
+
+
+```{r}
+
+
+DHSs_mesc <- AnnotationTrack(dhs.mesc%>%as_tibble%>%
+                             filter(seqnames=="chr3"), name = "DHSs",
+                                  chromosome="chr3", col = NULL)
+
+
+plotTracks(list(itrack, gtrack, atrack,DHSs_mesc, customFromTxDb), from= 34751781, to=34766293, col = NULL, collapseTranscripts="longest",
+           transcriptAnnotation = "gene_id")
+
+#genes(TxDb.Mmusculus.UCSC.mm10.knownGene)
+
+head(gene(customFromTxDb))
+head(transcript(customFromTxDb))
+head(exon(customFromTxDb))
+head(symbol(customFromTxDb))
+
+
+```
+
+```{r}
+#Import DNAse bigwigo
+# This track needs to be downloaded from OSF repository as it is too heavy for Github
+bgFile <- import.bw('/DATA/usr/m.martinez.ara/GitHub/EEPCombinations/data/tracks/GSM1856456_DNaseI_2i.ucsc.bigWig', as="GRanges")
+dTrack2DNAse2i <- DataTrack(range = bgFile, genome = "mm10", type = "hist", 
+                     chromosome = "chr3", name = "DNase I 2i")
+```
+
+
+```{r}
+
+# Process to correct names inspired by from https://jnicolaus.com/tutorials/gviztutorial.html
+
+#Extract transcript Id
+customFromTxDb@range@elementMetadata@listData$transcript<-lapply(str_split(customFromTxDb@range@elementMetadata@listData$transcript,pattern = "\\."), function(x) x[1])
+  
+mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+#Obtain all Gene names to transcript id correspondences
+convertedgenex <- getBM(attributes = c("ensembl_transcript_id", "external_gene_name"),
+                         #filters = "ensembl_transcript_id",
+                         values = c("ENSMUST00000206119"),
+                         mart = mouse)
+
+#Filter to only transctripts found inKlf2 chr
+filtredGeneNames<-convertedgenex%>%
+  as_tibble()%>%
+    filter(ensembl_transcript_id%in%customFromTxDb@range@elementMetadata@listData$transcript)
+
+# Match Transcripts from Klf2 chr to Gene names
+CorrectedGenenames<-as_tibble(as.vector(unlist(customFromTxDb@range@elementMetadata@listData$transcript)))%>%
+  mutate(ensembl_transcript_id=value)%>%dplyr::select(ensembl_transcript_id)%>%
+  left_join(filtredGeneNames, by=c("ensembl_transcript_id"))
+
+#Replace them in object for plotting
+ customFromTxDb@range@elementMetadata@listData$gene<-as.list(CorrectedGenenames$external_gene_name)
+
+```
+
+# Sox2
+
+```{r Sox2ZoomIn, fig.height=5, fig.width=8}
+#Plot Zoom in Sox2 region
+plotTracks(list(itrack, gtrack,dTrack2DNAse2i,atrack, atrack2, atrack3), from= 34751781, to=34766293, col = NULL, collapseTranscripts = "meta" ,transcriptAnnotation = "gene",stackHeight=0.4, fontsize=15)
+```
+
+# Otx2
+
+```{r}
+Otx2EPs<-rtracklayer::import('~/mydata/GitLab/epmatrix/data/tad_deconstr_design/designs/fc180410_dat_otx2.bed', format = "BED" )
+```
+
+```{r}
+atrackO <- AnnotationTrack(Otx2EPs, name = "Reg Elements", stacking="squish")
+
+
+
+gtrack <- GenomeAxisTrack()
+
+
+#genome : "hg19" 
+gen<-"mm10"
+#Chromosme name : "chr7"
+chr <- "chr14"
+itrack <- IdeogramTrack(genome = gen, chromosome = chr)
+
+library(TxDb.Mmusculus.UCSC.mm10.knownGene) 
+customFromTxDb <- GeneRegionTrack(TxDb.Mmusculus.UCSC.mm10.knownGene,
+                                  chromosome="chr14" ) 
+
+#grtrack <- GeneRegionTrack(geneModels, genome = gen,
+#                           chromosome = chr, name = "Gene Model")
+# chr3:34,751,781-34,766,293
+```
+
+
+```{r}
+
+
+DHSs_mescchr14 <- AnnotationTrack(dhs.mesc%>%as_tibble%>%
+                             filter(seqnames=="chr14"), name = "DHSs",
+                                  chromosome="chr14", col = NULL)
+
+
+```
+
+```{r}
+#make DNAse bigwig chr 14
+dTrack2DNAse2ichr14 <- DataTrack(range = bgFile, genome = "mm10", type = "hist", 
+                     chromosome = "chr14", name = "DNase I 2i")
+```
+
+```{r Otx2ZoomIn, fig.height=5, fig.width=8}
+# chr14 48651874 48668688
+#Plot Zoom in Otx2 region
+
+grtrack <- GeneRegionTrack(TxDb.Mmusculus.UCSC.mm10.knownGene, genome = gen,
+                           chromosome = chr)
+ 
+
+plotTracks(list(itrack, gtrack,dTrack2DNAse2ichr14,atrackO, atrack2, grtrack), from= 48651874, to=48667688,stackHeight=0.4, fontsize=15, collapseTranscripts="longest")
+```
+
