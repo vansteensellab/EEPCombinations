@@ -1395,6 +1395,20 @@ save(list = c('tib_Split_EEP_Sox2_normDual','tib_Split_EEP_Klf2_normDual','tib_S
      file = '~/mydata/GitHub/EEPCombinations/data/MMA20230805_EEP_Norm.RData')
 ```
 
+# Export supplementary table 3
+
+```{r}
+# merge all libraries
+tib_Split_EEP_All_normDual<-bind_rows(tib_Split_EEP_Sox2_normDual, tib_Split_EEP_Klf2_normDual, tib_Split_EEP_Otx2_normDual, tib_Split_EEP_FGF5_normDual, tib_Split_EEP_Lefty1_normDual, tib_Split_EEP_Nanog_normDual, tib_Split_EEP_P14_normDual, tib_Split_EEP_Tbx3_normDual)
+```
+
+```{r}
+# write table
+write_tsv(tib_Split_EEP_All_normDual, '~/mydata/GitHub/EEPCombinations/data/SupplementaryTable3_EEPnormalized_MMA2023030806.tsv')
+
+```
+
+
 ```{r}
 ## Remove Objects not needed
 rm(list = ls())
