@@ -1,5 +1,5 @@
 # EEPCombinations
-Repository to acompany Martinez-ara et al., 2023
+Repository to acompany [Martinez-ara et al., 2023.](https://elifesciences.org/reviewed-preprints/91994v2)
 
 This repository contains 4 folders:
 
